@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=debug
+    env_file:
+      - envs/.env

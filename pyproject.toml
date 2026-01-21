@@ -1,0 +1,24 @@
+[project]
+name = "journalclub"
+version = "0.1.0"
+description = "AI-powered academic paper reader and podcast generator"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",  # for file uploads
+    "pydantic>=2.4.0",
+    "pypdf>=3.17.0",  # or pdfplumber
+    "httpx>=0.25.0",  # for LLM API calls
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.10.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
