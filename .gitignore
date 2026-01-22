@@ -11,3 +11,6 @@ dist/
 build/
 
 envs
+site/config.js
+uploads/*
+!uploads/.gitkeep

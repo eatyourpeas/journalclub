@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import os
 from pathlib import Path
 from app.services.pdf_parser import PDFParser
@@ -71,7 +71,7 @@ async def get_paper_info(filename: str):
         raise HTTPException(status_code=500, detail=f"Error reading PDF: {str(e)}")
 
 @router.post("/summarise")
-async def summarise_paper(request: SummaryRequest):
+async def summarize_paper(request: SummaryRequest):
     """
     Generate a summary of an uploaded paper using LLM
     """
@@ -85,7 +85,7 @@ async def summarise_paper(request: SummaryRequest):
         parsed_text = pdf_parser.extract_text(str(file_path))
         
         # Generate summary using LLM
-        result = await llm_service.summarise_paper(parsed_text)
+        result = await llm_service.summarize_paper(parsed_text)
         
         return {
             "filename": request.filename,
