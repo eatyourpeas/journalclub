@@ -91,7 +91,7 @@ async function uploadFile(file) {
   formData.append("file", file);
 
   try {
-    const response = await fetch(`${API_BASE}/upload`, {
+    const response = await fetch(`${API_BASE}/api/papers/upload`, {
       method: "POST",
       body: formData,
     });
@@ -166,7 +166,7 @@ async function handleReadAloud() {
 
   try {
     // Step 1: Generate TTS-optimized script
-    const scriptResponse = await fetch(`${API_BASE}/tts-script`, {
+    const scriptResponse = await fetch(`${API_BASE}/api/papers/tts-script`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -187,7 +187,7 @@ async function handleReadAloud() {
     audioContainer.innerHTML = `<div class="p-6 bg-base-100 min-h-[100px]"><span class="loading loading-spinner loading-md"></span> Converting to audio...</div>`;
 
     // Step 2: Convert script to audio
-    const audioResponse = await fetch(`${API_BASE}/read_aloud`, {
+    const audioResponse = await fetch(`${API_BASE}/api/papers/read_aloud`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
