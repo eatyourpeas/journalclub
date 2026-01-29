@@ -1,16 +1,42 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="emerald">
+<html lang="en" data-theme="academic">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="favicon.svg" type="image/x-icon">
     <title>JournalClub - AI Paper Reader</title>
-    <!-- Link to Tailwind CSS -->
+    
+    <!-- 1. Tailwind config FIRST -->
+    <script>
+      tailwind.config = {
+        daisyui: {
+          themes: [
+            {
+              academic: {
+                "primary": "#9FA4C4",      // Lavender blue (soft, calm)
+                "secondary": "#9E768F",    // Dusty rose (warm accent)
+                "accent": "#C7F0BD",       // Mint green (fresh, success)
+                "neutral": "#6C464F",      // Deep mauve (elegant dark)
+                "base-100": "#ffffff",     // White background
+                "base-200": "#f8f9fa",     // Very light gray
+                "base-300": "#B3CDD1",     // Powder blue (subtle backgrounds)
+                "info": "#9FA4C4",         // Same as primary
+                "success": "#C7F0BD",      // Mint green
+                "warning": "#9E768F",      // Dusty rose
+                "error": "#6C464F",        // Deep mauve
+              },
+            },
+          ],
+        },
+      }
+    </script>
+    
+    <!-- 2. Load Tailwind CSS SECOND -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Link to DaisyUI CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <!-- Link to config.js -->
+    
+    <!-- 3. Load DaisyUI CSS THIRD (AFTER Tailwind) -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
 </head>
 
 <body class="min-h-screen bg-base-200 py-10 px-4">
@@ -18,7 +44,7 @@
         <!-- Header -->
         <header class="text-center mb-10 space-y-2">
             <h1 class="text-5xl font-bold text-primary">JournalClub</h1>
-            <p class="font-mono opacity-70 italic text-sm">AI-powered clinical insights</p>
+            <p class="font-mono opacity-70 italic text-sm text-base-content">Read research articles without the hassle</p>
         </header>
 
         <!-- Main Card -->
