@@ -6,8 +6,8 @@ on:
       - main
       - master
     paths:
-      - 'site/**'  # Only trigger when site folder changes
-  workflow_dispatch:  # Allow manual triggering
+      - "site/**" # Only trigger when site folder changes
+  workflow_dispatch: # Allow manual triggering
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -35,14 +35,12 @@ jobs:
 
       - name: Configure API URL
         run: |
-          # Replace API_BASE_URL in config.js with your Northflank API URL
-          # Update this URL after deploying to Northflank
           sed -i 's|API_BASE_URL|${{ secrets.API_BASE_URL }}|g' site/config.js
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './site'
+          path: "./site"
 
       - name: Deploy to GitHub Pages
         id: deployment
