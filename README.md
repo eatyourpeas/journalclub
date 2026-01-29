@@ -129,8 +129,10 @@ journalclub/
 │   ├── services/
 │   │   ├── pdf_parser.py       # PDF text extraction
 │   │   └── llm_service.py      # LLM API integration
-│   └── models/
+│   ├── models/
 │       └── schemas.py          # Pydantic models
+|.  └── prompts/                  # Prompts used
+|       └── tts_prompt.md
 ├── uploads/                    # Uploaded PDFs storage
 ├── docker-compose.yml
 ├── Dockerfile

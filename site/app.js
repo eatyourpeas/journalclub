@@ -162,10 +162,11 @@ async function handleSummarize() {
 async function handleReadAloud() {
   const area = document.getElementById("resultArea");
   area.classList.remove("hidden");
-  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="audioContainer"><span class="loading loading-spinner loading-md"></span> Generating audio...</div></div>`;
+  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="audioContainer"><span class="loading loading-spinner loading-md"></span> Generating optimized script...</div></div>`;
 
   try {
-    const response = await fetch(`${API_BASE}/read_aloud`, {
+    // Step 1: Generate TTS-optimized script
+    const scriptResponse = await fetch(`${API_BASE}/tts-script`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -175,16 +176,36 @@ async function handleReadAloud() {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Audio generation failed: ${response.status}`);
+    if (!scriptResponse.ok) {
+      throw new Error(`Script generation failed: ${scriptResponse.status}`);
+    }
+
+    const scriptData = await scriptResponse.json();
+
+    // Update status
+    const audioContainer = document.getElementById("audioContainer");
+    audioContainer.innerHTML = `<div class="p-6 bg-base-100 min-h-[100px]"><span class="loading loading-spinner loading-md"></span> Converting to audio...</div>`;
+
+    // Step 2: Convert script to audio
+    const audioResponse = await fetch(`${API_BASE}/read_aloud`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filename: currentFilename,
+      }),
+    });
+
+    if (!audioResponse.ok) {
+      throw new Error(`Audio generation failed: ${audioResponse.status}`);
     }
 
     // Get the audio blob from the response
-    const audioBlob = await response.blob();
+    const audioBlob = await audioResponse.blob();
     const audioUrl = URL.createObjectURL(audioBlob);
 
-    // Display the audio player
-    const audioContainer = document.getElementById("audioContainer");
+    // Display the audio player with the script preview
     audioContainer.innerHTML = `
       <div class="flex flex-col gap-4">
         <h3 class="text-lg font-bold">Listen to Paper</h3>
@@ -192,7 +213,15 @@ async function handleReadAloud() {
           <source src="${audioUrl}" type="audio/mpeg">
           Your browser does not support the audio element.
         </audio>
-        <p class="text-sm text-gray-500 italic">Audio preview (first 2000 characters)</p>
+        <div class="collapse collapse-arrow bg-base-200">
+          <input type="checkbox" /> 
+          <div class="collapse-title font-medium">
+            View TTS Script
+          </div>
+          <div class="collapse-content"> 
+            <p class="text-sm whitespace-pre-wrap">${scriptData.script}</p>
+          </div>
+        </div>
       </div>
     `;
   } catch (err) {
