@@ -1,7 +1,6 @@
-const API_BASE =
-  typeof CONFIG !== "undefined"
-    ? CONFIG.API_BASE_URL
-    : "http://localhost:8000/api/papers";
+const API_BASE = API_BASE_URL
+  ? `${API_BASE_URL}/api/papers`
+  : "http://localhost:8000/api/papers";
 const stageContainer = document.getElementById("stageContainer");
 let currentFilename = null;
 let isUploading = false;
