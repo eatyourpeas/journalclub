@@ -1,6 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 import os
+import io
+from gtts import gTTS
 from pathlib import Path
 from app.services.pdf_parser import PDFParser
 from app.services.llm_server import LLMService
@@ -120,3 +122,28 @@ async def generate_tts_script(request: SummaryRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating TTS script: {str(e)}")
+
+@router.post("/read_aloud")
+async def read_aloud(request: SummaryRequest):
+    file_path = UPLOAD_DIR / request.filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Paper not found")
+    
+    try:
+        # 1. Extract the text you want to read
+        parsed_text = pdf_parser.extract_text(str(file_path))
+        
+        # 2. Use gTTS to create an audio object in memory
+        tts = gTTS(text=parsed_text[:2000], lang='en') # Limit text for speed
+        
+        # 3. Save to a byte stream instead of a physical file
+        audio_stream = io.BytesIO()
+        tts.write_to_fp(audio_stream)
+        audio_stream.seek(0) # Go back to the start of the stream
+        
+        # 4. Return as a stream the browser can understand
+        return StreamingResponse(audio_stream, media_type="audio/mpeg")
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error streaming audio: {str(e)}")

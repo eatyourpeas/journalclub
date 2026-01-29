@@ -4,7 +4,11 @@ WORKDIR /app
 
 # Install system dependencies for PDF processing
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    git \
+    espeak \
+    libespeak1 \
+    espeak-ng \
+    libespeak-ng-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files

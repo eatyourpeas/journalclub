@@ -1,234 +1,206 @@
-// API_BASE is defined in config.js
 const API_BASE =
   typeof CONFIG !== "undefined"
     ? CONFIG.API_BASE_URL
     : "http://localhost:8000/api/papers";
-
-let uploadedFile = null;
+const stageContainer = document.getElementById("stageContainer");
 let currentFilename = null;
+let isUploading = false;
 
-// DOM Elements
-const uploadBox = document.getElementById("uploadBox");
-const fileInput = document.getElementById("fileInput");
-const fileInfo = document.getElementById("fileInfo");
-const actionButtons = document.getElementById("actionButtons");
-const summarizeBtn = document.getElementById("summarizeBtn");
-const readAloudBtn = document.getElementById("readAloudBtn");
-const resultSection = document.getElementById("resultSection");
-const resultTitle = document.getElementById("resultTitle");
-const resultContent = document.getElementById("resultContent");
-const copyBtn = document.getElementById("copyBtn");
+// Prevent form submissions globally
+document.addEventListener(
+  "submit",
+  (e) => {
+    e.preventDefault();
+    return false;
+  },
+  true,
+);
 
-// Upload box click handler
-uploadBox.addEventListener("click", () => {
-  fileInput.click();
-});
+// --- View 1: The Upload UI ---
+function renderUploadView() {
+  stageContainer.innerHTML = `
+        <label for="fileInput" id="uploadBox" class="border-2 border-dashed border-primary/30 rounded-box p-12 text-center bg-base-200/50 hover:bg-base-200 cursor-pointer block">
+            <input type="file" id="fileInput" accept=".pdf" class="hidden">
+            <div class="flex flex-col items-center gap-2">
+                <svg class="w-12 h-12 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                <p class="text-lg font-semibold">Click to upload Journal article as PDF</p>
+            </div>
+        </label>`;
 
-// File input change handler
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    handleFile(file);
-  }
-});
+  const input = document.getElementById("fileInput");
 
-// Drag and drop handlers
-uploadBox.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  uploadBox.classList.add("dragover");
-});
+  input.addEventListener("change", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.target.files[0] && !isUploading) {
+      const file = e.target.files[0];
+      // Reset the input immediately to prevent any navigation
+      e.target.value = "";
+      uploadFile(file);
+    }
+  });
+}
 
-uploadBox.addEventListener("dragleave", () => {
-  uploadBox.classList.remove("dragover");
-});
+// --- View 2: The Success & Actions UI ---
+function renderActionView(filename, pages) {
+  stageContainer.innerHTML = `
+        <div class="alert alert-success shadow-sm mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span><strong>Ready:</strong> ${filename} (${pages} pages)</span>
+        </div>
+        <div class="flex gap-4">
+            <button id="summarizeBtn" type="button" class="btn btn-primary flex-1">Summarise</button>
+            <button id="listenBtn" type="button" class="btn btn-secondary flex-1">Listen</button>
+            <button id="resetBtn" type="button" class="btn btn-ghost">Reset</button>
+        </div>
+        <div id="resultArea" class="mt-6 hidden"></div>
+    `;
 
-uploadBox.addEventListener("drop", (e) => {
-  e.preventDefault();
-  uploadBox.classList.remove("dragover");
+  // Add event listeners
+  const summarizeBtn = document.getElementById("summarizeBtn");
+  const listenBtn = document.getElementById("listenBtn");
+  const resetBtn = document.getElementById("resetBtn");
 
-  const file = e.dataTransfer.files[0];
-  if (file && file.type === "application/pdf") {
-    handleFile(file);
-  } else {
-    alert("Please upload a PDF file");
-  }
-});
+  summarizeBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSummarize();
+  });
 
-// Handle file upload
-async function handleFile(file) {
-  uploadedFile = file;
+  listenBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleReadAloud();
+  });
+
+  resetBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    renderUploadView();
+  });
+}
+
+// --- Logic ---
+async function uploadFile(file) {
+  isUploading = true;
+
+  // Show immediate loading feedback
+  stageContainer.innerHTML = `<div class="py-20 text-center"><span class="loading loading-spinner loading-lg text-primary"></span><p class="mt-4">Uploading and Parsing...</p></div>`;
 
   const formData = new FormData();
   formData.append("file", file);
 
   try {
-    // Show loading state
-    fileInfo.innerHTML = `<p>Uploading ${file.name}...</p>`;
-    fileInfo.classList.remove("hidden");
-
     const response = await fetch(`${API_BASE}/upload`, {
       method: "POST",
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error("Upload failed");
+      throw new Error(`Upload Failed: ${response.status}`);
     }
 
     const data = await response.json();
     currentFilename = data.filename;
+    renderActionView(data.filename, data.total_pages);
+  } catch (err) {
+    console.error("Upload error:", err);
+    stageContainer.innerHTML = `
+      <div class="alert alert-error">Error: ${err.message}</div>
+      <button id="tryAgainBtn" type="button" class="btn mt-4">Try Again</button>
+    `;
 
-    // Show success message
-    fileInfo.innerHTML = `
-            <div>
-                <strong>${data.filename}</strong><br>
-                <small>${data.total_pages} pages • ${data.word_count.toLocaleString()} words</small>
-            </div>
-        `;
-
-    // Show action buttons
-    actionButtons.classList.remove("hidden");
-    resultSection.classList.add("hidden");
-  } catch (error) {
-    fileInfo.innerHTML = `<p style="color: red;">Error uploading file: ${error.message}</p>`;
+    const tryAgainBtn = document.getElementById("tryAgainBtn");
+    tryAgainBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      renderUploadView();
+    });
+  } finally {
+    isUploading = false;
   }
 }
 
-// Summarize button handler
-summarizeBtn.addEventListener("click", async () => {
-  if (!currentFilename) return;
-
-  // Disable buttons
-  summarizeBtn.disabled = true;
-  readAloudBtn.disabled = true;
-
-  // Show result section with loading
-  resultSection.classList.remove("hidden");
-  resultTitle.textContent = "Summary";
-  resultContent.innerHTML =
-    '<div class="loading"><div class="spinner"></div><p>Generating summary...</p></div>';
+async function handleSummarize() {
+  const area = document.getElementById("resultArea");
+  area.classList.remove("hidden");
+  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="summaryText"><span class="loading loading-spinner loading-md"></span> Generating summary...</div></div>`;
 
   try {
-    // Use streaming endpoint
-    await streamResponse(`${API_BASE}/summarise/stream`, "Summary");
-  } catch (error) {
-    resultContent.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
-  } finally {
-    summarizeBtn.disabled = false;
-    readAloudBtn.disabled = false;
-  }
-});
-
-// Read Aloud button handler
-readAloudBtn.addEventListener("click", async () => {
-  if (!currentFilename) return;
-
-  // Disable buttons
-  summarizeBtn.disabled = true;
-  readAloudBtn.disabled = true;
-
-  // Show result section with loading
-  resultSection.classList.remove("hidden");
-  resultTitle.textContent = "Text-to-Speech Script";
-  resultContent.innerHTML =
-    '<div class="loading"><div class="spinner"></div><p>Generating TTS script...</p></div>';
-
-  try {
-    const response = await fetch(`${API_BASE}/tts-script`, {
+    const response = await fetch(`${API_BASE}/summarise`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ filename: currentFilename }),
+      body: JSON.stringify({
+        filename: currentFilename,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error("Failed to generate TTS script");
+      throw new Error(`Summary generation failed: ${response.status}`);
     }
 
     const data = await response.json();
-    resultContent.innerHTML = `<p class="streaming-cursor">${data.script}</p>`;
 
-    // Remove cursor after a moment
-    setTimeout(() => {
-      const p = resultContent.querySelector("p");
-      if (p) p.classList.remove("streaming-cursor");
-    }, 500);
-  } catch (error) {
-    resultContent.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
-  } finally {
-    summarizeBtn.disabled = false;
-    readAloudBtn.disabled = false;
-  }
-});
-
-// Stream response from API
-async function streamResponse(url, title) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: currentFilename }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to generate response");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-
-  let accumulatedText = "";
-  resultContent.innerHTML = '<p class="streaming-cursor"></p>';
-  const textElement = resultContent.querySelector("p");
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) {
-      // Remove streaming cursor
-      textElement.classList.remove("streaming-cursor");
-      break;
-    }
-
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n");
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.content) {
-            accumulatedText += data.content;
-            textElement.textContent = accumulatedText;
-          }
-
-          if (data.error) {
-            textElement.innerHTML = `<span style="color: red;">Error: ${data.error}</span>`;
-            textElement.classList.remove("streaming-cursor");
-            return;
-          }
-        } catch (e) {
-          // Skip invalid JSON
-          continue;
-        }
-      }
-    }
+    // Display the summary
+    const summaryText = document.getElementById("summaryText");
+    summaryText.innerHTML = `
+      <div class="prose max-w-none">
+        <h3 class="text-lg font-bold mb-2">Summary</h3>
+        <p class="whitespace-pre-wrap">${data.summary}</p>
+        <p class="text-sm text-gray-500 mt-4 italic">Generated by ${data.model_used}</p>
+      </div>
+    `;
+  } catch (err) {
+    console.error("Summarize error:", err);
+    const summaryText = document.getElementById("summaryText");
+    summaryText.innerHTML = `<div class="alert alert-error">Error: ${err.message}</div>`;
   }
 }
 
-// Copy button handler
-copyBtn.addEventListener("click", () => {
-  const text = resultContent.textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    const originalText = copyBtn.innerHTML;
-    copyBtn.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!';
+async function handleReadAloud() {
+  const area = document.getElementById("resultArea");
+  area.classList.remove("hidden");
+  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="audioContainer"><span class="loading loading-spinner loading-md"></span> Generating audio...</div></div>`;
 
-    setTimeout(() => {
-      copyBtn.innerHTML = originalText;
-    }, 2000);
-  });
-});
+  try {
+    const response = await fetch(`${API_BASE}/read_aloud`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filename: currentFilename,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Audio generation failed: ${response.status}`);
+    }
+
+    // Get the audio blob from the response
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Display the audio player
+    const audioContainer = document.getElementById("audioContainer");
+    audioContainer.innerHTML = `
+      <div class="flex flex-col gap-4">
+        <h3 class="text-lg font-bold">Listen to Paper</h3>
+        <audio controls class="w-full" autoplay>
+          <source src="${audioUrl}" type="audio/mpeg">
+          Your browser does not support the audio element.
+        </audio>
+        <p class="text-sm text-gray-500 italic">Audio preview (first 2000 characters)</p>
+      </div>
+    `;
+  } catch (err) {
+    console.error("Read aloud error:", err);
+    const audioContainer = document.getElementById("audioContainer");
+    audioContainer.innerHTML = `<div class="alert alert-error">Error: ${err.message}</div>`;
+  }
+}
+
+// Initialize
+renderUploadView();
