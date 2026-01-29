@@ -1,12 +1,21 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+import app
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+import uuid
+from fastapi.responses import StreamingResponse
+import json
 import os
 import io
 from gtts import gTTS
 from pathlib import Path
 from app.services.pdf_parser import PDFParser
 from app.services.llm_server import LLMService
-from app.models.schemas import PaperResponse, SummaryRequest, SummaryResponse
+from app.models.schemas import (
+    SummaryStatusResponse,
+    SummaryRequest,
+    TaskStatus,
+    SummaryTaskResponse,
+    PaperResponse,
+)
 
 router = APIRouter()
 pdf_parser = PDFParser()
@@ -14,6 +23,47 @@ llm_service = LLMService()
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+tasks = {}
+
+
+# Helper function
+async def get_paper_text(filename: str) -> str:
+    """Helper to get paper text from uploaded file"""
+    file_path = UPLOAD_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    try:
+        return pdf_parser.extract_text(str(file_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading PDF: {str(e)}")
+
+
+# Background task processor
+async def process_summarization(task_id: str, filename: str):
+    """Process summarization in the background"""
+    try:
+        tasks[task_id]["status"] = TaskStatus.PROCESSING
+        tasks[task_id]["progress"] = "Reading paper..."
+
+        # Get paper text
+        paper_text = await get_paper_text(filename)
+
+        tasks[task_id]["progress"] = "Analyzing with AI..."
+
+        # Call LLM
+        result = await llm_service.summarise_paper(paper_text)
+
+        tasks[task_id]["status"] = TaskStatus.COMPLETED
+        tasks[task_id]["summary"] = result["summary"]
+        tasks[task_id]["progress"] = "Complete"
+
+    except Exception as e:
+        tasks[task_id]["status"] = TaskStatus.FAILED
+        tasks[task_id]["error"] = str(e)
 
 
 @router.post("/upload", response_model=PaperResponse)
@@ -77,33 +127,37 @@ async def get_paper_info(filename: str):
         raise HTTPException(status_code=500, detail=f"Error reading PDF: {str(e)}")
 
 
-@router.post("/summarise")
-async def summarize_paper(request: SummaryRequest):
+# NEW ENDPOINTS
+@router.post("/summarise", response_model=SummaryTaskResponse)
+async def summarise_paper(request: SummaryRequest, background_tasks: BackgroundTasks):
     """
-    Generate a summary of an uploaded paper using LLM
+    Start a summarization task for the uploaded paper
     """
-    file_path = UPLOAD_DIR / request.filename
+    task_id = str(uuid.uuid4())
 
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Paper not found")
+    tasks[task_id] = {
+        "status": TaskStatus.PENDING,
+        "filename": request.filename,
+        "progress": "Queued for processing",
+    }
 
-    try:
-        # Extract text from PDF
-        parsed_text = pdf_parser.extract_text(str(file_path))
+    # Run the actual summarization in the background
+    background_tasks.add_task(process_summarization, task_id, request.filename)
 
-        # Generate summary using LLM
-        result = await llm_service.summarize_paper(parsed_text)
+    return SummaryTaskResponse(
+        task_id=task_id, status=TaskStatus.PENDING, filename=request.filename
+    )
 
-        return {
-            "filename": request.filename,
-            "summary": result["raw_response"],
-            "model_used": result["model_used"],
-        }
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error generating summary: {str(e)}"
-        )
+@router.get("/summarise/{task_id}", response_model=SummaryStatusResponse)
+async def get_summary_status(task_id: str):
+    """
+    Get the status of a summarization task
+    """
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return SummaryStatusResponse(**tasks[task_id], task_id=task_id)
 
 
 @router.post("/tts-script")
