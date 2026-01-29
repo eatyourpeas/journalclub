@@ -172,7 +172,7 @@ Please structure your response as JSON with keys: summary, key_points, methodolo
 
 {paper_text}
 
-Generate the TTS script now:"""
+"""
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
