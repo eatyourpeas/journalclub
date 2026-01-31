@@ -19,7 +19,6 @@ function loadHeader() {
           <a href="base.html?page=topics" class="btn btn-ghost btn-sm">Topics</a>
           <a href="base.html?page=docs" class="btn btn-ghost btn-sm">Documentation</a>
           <a href="" id="apiSpecLink" class="btn btn-ghost btn-sm">API Spec</a>
-          <a href="" id="swaggerLink" class="btn btn-ghost btn-sm">Swagger UI</a>
             <a href="base.html?page=podcast-builder" class="btn btn-ghost btn-sm gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ff8c00" class="w-4 h-4">
                         <circle cx="6.18" cy="17.82" r="2.18"/>
@@ -36,9 +35,7 @@ function loadHeader() {
   // wire up API links (use API_ROOT to build absolute URLs)
   try {
     const apiSpec = document.getElementById("apiSpecLink");
-    const swagger = document.getElementById("swaggerLink");
     if (apiSpec) apiSpec.setAttribute("href", `${API_ROOT}/docs`);
-    if (swagger) swagger.setAttribute("href", `${API_ROOT}/swagger-ui`);
   } catch (e) {
     // ignore DOM wiring errors
   }

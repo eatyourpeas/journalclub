@@ -140,10 +140,10 @@
     <script src="config.js"></script>
     <script src="header.js"></script>
     <script>
-        const API_BASE = typeof API_BASE_URL !== 'undefined' && API_BASE_URL !== "__API_BASE_URL__" 
-            ? `${API_BASE_URL}/api/papers` 
-            : "http://localhost:8000/api/papers";
-
+        let API_BASE = "http://localhost:8000/api/papers";
+        if (API_BASE_URL !== "__API_BASE_URL__") {
+            API_BASE = `${API_BASE_URL}/api/papers`;
+        }
         const docContent = document.getElementById('docContent');
         const loadedDocs = {};
         let currentDoc = null;
