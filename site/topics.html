@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nord">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <title>Topics - JournalClub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="bg-base-100">
+    <!-- Header will be injected here by header.js -->
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-4xl font-bold">Topics</h1>
+                <p class="text-base-content/70">Combine papers into a topic episode</p>
+            </div>
+            <div>
+                <button id="createTopicBtn" class="btn btn-primary">Create Topic</button>
+            </div>
+        </div>
+
+        <div id="topicsContainer">
+            <div class="text-center py-12">
+                <span class="loading loading-spinner loading-lg text-primary"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Topic Modal -->
+    <input type="checkbox" id="create-topic-modal" class="modal-toggle" />
+    <div class="modal">
+      <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg">Create Topic</h3>
+        <p class="text-sm text-base-content/70">Select up to 5 papers and give the topic a name.</p>
+
+        <div class="mt-4">
+          <label class="label"> <span class="label-text">Topic name</span> </label>
+          <input id="topicNameInput" type="text" placeholder="e.g. Diabetes treatments" class="input input-bordered w-full" />
+        </div>
+
+        <div class="mt-4">
+          <label class="label"> <span class="label-text">Available papers (select up to 5)</span> </label>
+          <div id="papersList" class="grid grid-cols-1 gap-2 max-h-60 overflow-auto"></div>
+        </div>
+
+        <div class="modal-action">
+          <label for="create-topic-modal" id="cancelCreateBtn" class="btn">Cancel</label>
+          <button id="submitCreateBtn" class="btn btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="header.js"></script>
+    <script src="topics.js"></script>
+</body>
+</html>

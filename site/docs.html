@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nord">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <title>Documentation - JournalClub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="bg-base-100">
+    <!-- Header will be injected here by header.js -->
+    <!-- Tailwind sentinel: ensures typography (.prose) styles are generated for dynamic content -->
+    <div id="tailwind-prose-sentinel" class="prose lg:prose-lg max-w-none" style="display:none" aria-hidden="true"></div>
+
+    <div class="drawer lg:drawer-open">
+        <input id="docs-drawer" type="checkbox" class="drawer-toggle" />
+        
+        <!-- Main Content Area -->
+        <div class="drawer-content flex flex-col">
+            <!-- Mobile menu button -->
+            <div class="lg:hidden p-4 bg-base-200">
+                <label for="docs-drawer" class="btn btn-primary drawer-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    Menu
+                </label>
+            </div>
+            
+            <!-- Page content -->
+            <div class="p-4 lg:p-8 max-w-4xl">
+                <div id="docContent">
+                    <!-- Welcome message -->
+                    <div class="prose lg:prose-lg max-w-none">
+                        <h1>📚 Documentation</h1>
+                        <p class="lead">Welcome to the JournalClub documentation. Select a topic from the menu to get started.</p>
+                        
+                        <div class="alert alert-info mt-6">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h3 class="font-bold">Quick Start</h3>
+                                <div class="text-sm">Start with "Getting Started" to learn the basics, then explore topics and RSS feeds.</div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 not-prose">
+                            <div class="card bg-base-200">
+                                <div class="card-body">
+                                    <h2 class="card-title text-2xl">🚀</h2>
+                                    <p class="text-sm">New to JournalClub? Start here to learn how to upload and process papers.</p>
+                                </div>
+                            </div>
+                            <div class="card bg-base-200">
+                                <div class="card-body">
+                                    <h2 class="card-title text-2xl">📚</h2>
+                                    <p class="text-sm">Learn how to create topics to combine multiple papers into one cohesive episode.</p>
+                                </div>
+                            </div>
+                            <div class="card bg-base-200">
+                                <div class="card-body">
+                                    <h2 class="card-title text-2xl">📻</h2>
+                                    <p class="text-sm">Subscribe to your personal RSS feed and listen in your favorite podcast app.</p>
+                                </div>
+                            </div>
+                            <div class="card bg-base-200">
+                                <div class="card-body">
+                                    <h2 class="card-title text-2xl">🔧</h2>
+                                    <p class="text-sm">Complete API reference for developers who want to integrate with JournalClub.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sidebar Menu -->
+        <div class="drawer-side">
+            <label for="docs-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+            <aside class="bg-base-200 min-h-screen w-80 p-4">
+                <div class="mb-4">
+                    <h2 class="text-xl font-bold px-4 py-2">Documentation</h2>
+                </div>
+                
+                <ul class="menu">
+                    <li>
+                        <a href="#" class="doc-link" data-doc="getting-started">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            Getting Started
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="doc-link" data-doc="topics">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                            Creating Topics
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="doc-link" data-doc="rss-feed">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="#ff8c00">
+                                <circle cx="6.18" cy="17.82" r="2.18"/>
+                                <path d="M4 4.44v2.83c7.03 0 12.73 5.7 12.73 12.73h2.83c0-8.59-6.97-15.56-15.56-15.56zm0 5.66v2.83c3.9 0 7.07 3.17 7.07 7.07h2.83c0-5.47-4.43-9.9-9.9-9.9z"/>
+                            </svg>
+                            RSS Podcast Feed
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="doc-link" data-doc="api-reference">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                            API Reference
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="doc-link" data-doc="faq">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            FAQ
+                        </a>
+                    </li>
+                </ul>
+
+                <div class="divider"></div>
+
+                <ul class="menu">
+                    <li>
+                        <a href="index.html">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                            Back to Home
+                        </a>
+                    </li>
+                    <li>
+                        <a href="active-papers.html">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            Active Papers
+                        </a>
+                    </li>
+                </ul>
+            </aside>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="header.js"></script>
+    <script>
+        const API_BASE = typeof API_BASE_URL !== 'undefined' && API_BASE_URL !== "__API_BASE_URL__" 
+            ? `${API_BASE_URL}/api/papers` 
+            : "http://localhost:8000/api/papers";
+
+        const docContent = document.getElementById('docContent');
+        const loadedDocs = {};
+        let currentDoc = null;
+
+        async function loadDoc(docName) {
+            // Show loading state
+            docContent.innerHTML = `
+                <div class="flex items-center justify-center py-20">
+                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+            `;
+
+            // Highlight active menu item
+            document.querySelectorAll('.doc-link').forEach(link => {
+                if (link.dataset.doc === docName) {
+                    link.classList.add('active');
+                } else {
+                    link.classList.remove('active');
+                }
+            });
+
+            // Check if already loaded
+            if (loadedDocs[docName]) {
+                docContent.innerHTML = loadedDocs[docName];
+                currentDoc = docName;
+                // Close mobile drawer
+                document.getElementById('docs-drawer').checked = false;
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/docs/${docName}`);
+                if (!response.ok) throw new Error('Failed to load documentation');
+                
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const content = doc.querySelector('.prose');
+                
+                if (content) {
+                    // Cache the content
+                    loadedDocs[docName] = content.outerHTML;
+                    docContent.innerHTML = content.outerHTML;
+                    currentDoc = docName;
+                } else {
+                    throw new Error('Content not found in response');
+                }
+
+                // Close mobile drawer after loading
+                document.getElementById('docs-drawer').checked = false;
+                
+            } catch (err) {
+                console.error('Error loading doc:', err);
+                docContent.innerHTML = `
+                    <div class="alert alert-error">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span>Failed to load documentation: ${err.message}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Add click handlers to all doc links
+        document.querySelectorAll('.doc-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const docName = e.currentTarget.dataset.doc;
+                loadDoc(docName);
+            });
+        });
+
+        // Load first doc on page load (optional)
+        // loadDoc('getting-started');
+    </script>
+</body>
+</html>

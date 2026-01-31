@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nord">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <title>Active Papers - JournalClub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="bg-base-100">
+    <!-- Header will be injected here by header.js -->
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 class="text-4xl font-bold mb-4">Active Papers</h1>
+        <p class="text-base-content/70 mb-8">Papers uploaded in the last 24 hours</p>
+        
+        <div id="papersContainer" class="flex justify-center py-12">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="header.js"></script>
+    <script>
+        let API_BASE = "http://localhost:8000/api/papers";
+        if (API_BASE_URL !== "__API_BASE_URL__") {
+            API_BASE = `${API_BASE_URL}/api/papers`;
+        }
+        
+        async function loadActivePapers() {
+            try {
+                const response = await fetch(`${API_BASE}/active`);
+                if (!response.ok) throw new Error('Failed to load papers');
+                
+                const data = await response.json();
+                const container = document.getElementById('papersContainer');
+                
+                if (data.count === 0) {
+                    container.innerHTML = `
+                        <div class="text-center">
+                            <p class="text-lg text-base-content/70">No active papers</p>
+                            <a href="index.html" class="btn btn-primary mt-4">Upload a Paper</a>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <div class="w-full">
+                        <div class="stats stats-vertical lg:stats-horizontal shadow mb-6">
+                            <div class="stat">
+                                <div class="stat-title">Total Papers</div>
+                                <div class="stat-value text-primary">${data.count}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            ${data.papers.map(paper => `
+                                <div class="card bg-base-200" data-citation="${paper.citation || ''}">
+                                    <div class="card-body">
+                                        <h2 class="card-title">${paper.title}</h2>
+                                        <div class="text-sm text-base-content/70 mb-2">${(paper.authors && paper.authors.length) ? paper.authors.join(', ') : ''}</div>
+                                        <div class="grid grid-cols-2 gap-2 text-sm">
+                                            <div>
+                                                <span class="font-semibold">Filename:</span> ${paper.filename}
+                                            </div>
+                                            <div>
+                                                <span class="font-semibold">Time Remaining:</span> 
+                                                <span class="badge badge-info">${paper.hours_remaining}h</span>
+                                            </div>
+                                        </div>
+                                                                                <div class="text-xs text-base-content/70 mt-2">
+                                                                                    <span class="font-semibold">Pages:</span> ${paper.pages} • <span class="font-semibold">Words:</span> ${paper.word_count}
+                                                                                    <br />Uploaded: ${new Date(paper.uploaded_at).toLocaleString()}
+                                                                                    ${paper.pubmed_id ? `<br /><a class="link link-primary text-xs" href="https://pubmed.ncbi.nlm.nih.gov/${paper.pubmed_id}" target="_blank">PubMed:${paper.pubmed_id}</a>` : ''}
+                                                                                </div>
+                                                                                <div class="mt-2">
+                                                                                    <button class="btn btn-ghost btn-sm" onclick="copyCitation('${paper.filename}')">Copy citation</button>
+                                                                                </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                console.error('Error loading papers:', err);
+                document.getElementById('papersContainer').innerHTML = `
+                    <div class="alert alert-error">
+                        <span>Failed to load active papers: ${err.message}</span>
+                    </div>
+                `;
+            }
+        }
+
+        loadActivePapers();
+        
+        function copyCitation(filename) {
+            try {
+                // Find the card that contains this filename and read its data-citation
+                const cards = Array.from(document.querySelectorAll('div.card[data-citation]'));
+                const card = cards.find(c => c.textContent.includes(filename));
+                let text = filename;
+                if (card) {
+                    const citation = card.getAttribute('data-citation');
+                    if (citation) text = citation;
+                }
+                navigator.clipboard.writeText(text).then(() => alert('Citation copied to clipboard'));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>

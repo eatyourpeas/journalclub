@@ -1,63 +1,36 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="academic">
+<html lang="en" data-theme="nord">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="favicon.svg" type="image/x-icon">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <title>JournalClub - AI Paper Reader</title>
     
-    <!-- 1. Tailwind config FIRST -->
-    <script>
-      tailwind.config = {
-        daisyui: {
-          themes: [
-            {
-              academic: {
-                "primary": "#9FA4C4",      // Lavender blue (soft, calm)
-                "secondary": "#9E768F",    // Dusty rose (warm accent)
-                "accent": "#C7F0BD",       // Mint green (fresh, success)
-                "neutral": "#6C464F",      // Deep mauve (elegant dark)
-                "base-100": "#ffffff",     // White background
-                "base-200": "#f8f9fa",     // Very light gray
-                "base-300": "#B3CDD1",     // Powder blue (subtle backgrounds)
-                "info": "#9FA4C4",         // Same as primary
-                "success": "#C7F0BD",      // Mint green
-                "warning": "#9E768F",      // Dusty rose
-                "error": "#6C464F",        // Deep mauve
-              },
-            },
-          ],
-        },
-      }
-    </script>
-    
-    <!-- 2. Load Tailwind CSS SECOND -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 3. Load DaisyUI CSS THIRD (AFTER Tailwind) -->
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
 </head>
 
-<body class="min-h-screen bg-base-200 py-10 px-4">
-    <div class="max-w-3xl mx-auto">
+<body class="min-h-screen bg-base-100 py-10 px-4">
+    <!-- Header will be injected here by header.js -->
+    
+    <div class="max-w-3xl mx-auto mt-10">
         <!-- Header -->
         <header class="text-center mb-10 space-y-2">
             <h1 class="text-5xl font-bold text-primary">JournalClub</h1>
-            <p class="font-mono opacity-70 italic text-sm text-base-content">Read research articles without the hassle</p>
+            <p class="font-mono opacity-70 italic text-sm text-base-content">Research articles without the hassle</p>
         </header>
 
         <!-- Main Card -->
         <main class="card bg-base-100 shadow-xl border border-base-200">
-            <!-- Card Body -->
             <div class="card-body" id="stageContainer">
                 <!-- Content will be dynamically rendered here -->
             </div>
         </main>
     </div>
 
-    <!-- Link to app.js for JavaScript logic -->
     <script src="config.js"></script>
+    <script src="header.js"></script>
     <script src="app.js"></script>
 </body>
 

@@ -1,7 +1,7 @@
 from zipfile import Path
 import httpx, json, re
 import os
-from typing import Optional
+from typing import Optional, List
 
 
 class LLMService:
@@ -132,3 +132,92 @@ Respond with valid JSON using these exact keys: summary, key_points, methodology
             raise Exception(f"LLM API error: {str(e)}")
         except Exception as e:
             raise Exception(f"Error calling LLM: {str(e)}")
+
+    async def generate_topic_script(self, topic_name: str, papers: List[dict]) -> str:
+        """
+        Generate a TTS script for multiple papers on the same topic.
+        Includes intro, segues between papers, and conclusion.
+
+        Args:
+            topic_name: The name of the topic
+            papers: List of dicts with 'title', 'filename', 'text'
+        """
+
+        # Build the prompt for the LLM
+        papers_content = "\n\n---PAPER SEPARATOR---\n\n".join(
+            [
+                f"TITLE: {paper['title']}\n\nCONTENT:\n{paper['text']}"
+                for paper in papers
+            ]
+        )
+
+        prompt = f"""You are creating an audio podcast episode about: {topic_name}
+
+    You have {len(papers)} research papers to summarize. Create a cohesive audio script that:
+
+    1. Starts with a brief introduction to the topic ({topic_name})
+    2. For each paper:
+    - Introduce the paper's title and main research question
+    - Summarize the key findings and methodology
+    - Use natural segues between papers that highlight connections or contrasts
+    3. End with a brief conclusion synthesizing the main themes
+
+    Make it conversational and engaging for audio listening. Skip citations, author lists, and technical details that don't work well in audio.
+
+    Here are the papers:
+
+    {papers_content}
+
+    Generate the complete audio script now:"""
+
+        # Call your LLM (adjust based on your implementation)
+        response = await self.call_llm(prompt)
+
+        return response
+
+    async def generate_title(self, paper_text: str) -> str:
+        """Generate a concise, publication-style title for the given paper text.
+
+        Returns the title string or raises an Exception on error.
+        """
+        prompt = f"""Provide a concise, publication-quality title (no more than 12 words) for the following academic paper. Return only the title on a single line.
+
+Paper text:
+{paper_text}
+"""
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                headers = {"Content-Type": "application/json"}
+
+                if self.api_key:
+                    headers["Ocp-Apim-Subscription-Key"] = self.api_key
+
+                response = await client.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                    },
+                )
+
+                response.raise_for_status()
+                result = response.json()
+                content = (
+                    result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                )
+
+                # Keep only the first non-empty line
+                for line in content.splitlines():
+                    s = line.strip()
+                    if s:
+                        return s
+
+                return content.strip()
+
+        except httpx.HTTPError as e:
+            raise Exception(f"LLM API error (generate_title): {str(e)}")
+        except Exception as e:
+            raise Exception(f"Error generating title: {str(e)}")
