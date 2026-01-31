@@ -1,6 +1,6 @@
 [project]
 name = "journalclub"
-version = "0.1.4"
+version = "0.1.7"
 description = "AI-powered academic paper reader and podcast generator"
 requires-python = ">=3.10"
 dependencies = [
