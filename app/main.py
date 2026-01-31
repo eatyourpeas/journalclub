@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import papers
+from app.api.routes import tts
 
 app = FastAPI(
     title="JournalClub",
@@ -25,6 +26,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(papers.router, prefix="/api/papers", tags=["papers"])
+app.include_router(tts.router, prefix="/api/tts", tags=["tts"])
 
 
 @app.get("/")

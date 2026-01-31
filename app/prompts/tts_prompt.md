@@ -9,6 +9,7 @@ Your task is to transform this research paper into a natural, easy-to-listen scr
 - The paper title
 - Main topic/purpose based on the abstract
 - Key finding or contribution
+- Begin with a phrase that introduces the content and subject. For example: "This paper, entitled "Safety and pharmacokinetics of teplizumab in children less than 8 years of age with stage 2 type 1 diabetes", discusses monoclonal immuntherapies in the management of symptomatic type 1 diabetes. 
 
 ## 2. SKIP entirely:
 
@@ -40,3 +41,28 @@ Since you already used it in the introduction, don't read it again in the body.
 - Convert acronyms to full words on first use (e.g., "Machine Learning, or ML")
 - Do not include any stage directions or any details of production.
 - Following on from summarising the paper, then proceed to reading the paper, without the abstract and the references.
+- Avoid phrases like 'this paper appears to say'
+- Do not read out punctuation (for example asterisk)
+
+## 6. FORBIDDEN PHRASES
+
+- Do NOT use hedging or tentative phrases such as: "appears to be", "seems to be", "may", "might", "appears" at the start of the introduction or summary.
+- Do NOT introduce the paper using phrasing like "this paper appears to be about" or "this paper seems to".
+
+## 7. OUTPUT FORMAT (REQUIRED)
+
+Return exactly one JSON object and nothing else. The JSON must contain a single key named "script" whose value is the full audio script as a single string. Example:
+
+```json
+{"script":"<Begin audio script here...>"}
+```
+
+The model must not output any additional text, analysis, or metadata outside the JSON object. If you cannot follow these instructions, return an empty JSON object: `{}`.
+
+## 8. EXAMPLE INTRODUCTION
+
+Start the audio with a concise natural introduction of 1-2 sentences. Example (follow this tone, not verbatim):
+
+"This study, titled 'Title Here', investigates [main topic]. The key finding is that [one-line key finding]."
+
+Do not include author names or affiliations in the introduction. Use 'the authors' or 'the researchers' where needed.
