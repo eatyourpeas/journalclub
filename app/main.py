@@ -35,3 +35,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "medical-journal-summariser"}
+
+
+@app.get("/api/swagger-ui")
+async def swagger_ui():
+    return {"message": "Swagger UI endpoint"}

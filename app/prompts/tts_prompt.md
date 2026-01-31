@@ -38,3 +38,5 @@ Since you already used it in the introduction, don't read it again in the body.
 - Use transitions like "The results show that...", "Interestingly...", "In conclusion..."
 - Avoid parenthetical asides
 - Convert acronyms to full words on first use (e.g., "Machine Learning, or ML")
+- Do not include any stage directions or any details of production.
+- Following on from summarising the paper, then proceed to reading the paper, without the abstract and the references.

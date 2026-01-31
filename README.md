@@ -16,12 +16,13 @@ Currently implemented:
 - PDF upload and text extraction
 - LLM-powered summarization
 - TTS script generation
+- Text-to-speech audio generation
+- Frontend interface
 
 Coming soon:
 
 - Podcast dialogue generation (two-host discussion format)
-- Text-to-speech audio generation
-- Frontend interface
+- RSS feed
 
 ## Quick Start
 

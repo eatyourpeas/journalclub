@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 from typing import Optional
+from typing import List
 from enum import Enum
 
 
-# KEEP THIS - for upload endpoint
 class PaperResponse(BaseModel):
     filename: str
     file_path: str
@@ -11,6 +11,15 @@ class PaperResponse(BaseModel):
     total_pages: int
     word_count: int
     status: str
+    expires_at: Optional[str] = None
+
+
+class TopicResponse(BaseModel):
+    topic_id: str
+    topic_name: str
+    filenames: List[str]
+    status: str
+    expires_at: Optional[str] = None
 
 
 # ADD THESE - for summarization endpoints
@@ -49,3 +58,15 @@ class SummaryResponse(BaseModel):
     key_points: list[str]
     methodology: list[str]
     conclusions: list[str]
+
+
+class TopicRequest(BaseModel):
+    topic_name: str
+    filenames: List[str]  # Max 5 papers
+
+
+class TopicResponse(BaseModel):
+    topic_id: str
+    topic_name: str
+    filenames: List[str]
+    status: str

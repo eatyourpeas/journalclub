@@ -20,13 +20,25 @@ document.addEventListener(
 // --- View 1: The Upload UI ---
 function renderUploadView() {
   stageContainer.innerHTML = `
-        <label for="fileInput" id="uploadBox" class="border-2 border-dashed border-primary/30 rounded-box p-12 text-center bg-base-200/50 hover:bg-base-200 cursor-pointer block transition-colors">
-            <input type="file" id="fileInput" accept=".pdf" class="hidden">
-            <div class="flex flex-col items-center gap-2">
-                <svg class="w-12 h-12 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                <p class="text-lg font-semibold text-primary">Click to upload Journal article as PDF</p>
-            </div>
-        </label>`;
+        <div class="grid grid-cols-1 gap-4">
+          <label for="fileInput" id="uploadBox" class="border-2 border-dashed border-primary/30 rounded-box p-8 text-center bg-base-200/50 hover:bg-base-200 cursor-pointer block transition-colors">
+              <input type="file" id="fileInput" accept=".pdf" class="hidden">
+              <div class="flex flex-col items-center gap-2">
+                  <svg class="w-12 h-12 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                  <p class="text-lg font-semibold text-primary">Click to upload Journal article as PDF</p>
+              </div>
+          </label>
+
+          <div class="flex gap-2 items-center">
+            <select id="idTypeSelect" class="select select-bordered w-40">
+              <option value="pmid" selected>PMID</option>
+              <option value="pmcid">PMCID</option>
+              <option value="doi">DOI</option>
+            </select>
+            <input id="pmidInput" type="text" placeholder="Enter ID (e.g. 12345678 or PMC12779737 or 10.1000/xyz)" class="input input-bordered w-full" />
+            <button id="importPmidBtn" class="btn btn-primary">Import</button>
+          </div>
+        </div>`;
 
   const input = document.getElementById("fileInput");
 
@@ -38,6 +50,58 @@ function renderUploadView() {
       // Reset the input immediately to prevent any navigation
       e.target.value = "";
       uploadFile(file);
+    }
+  });
+
+  // PMID import handler
+  const importBtn = document.getElementById("importPmidBtn");
+  const pmidInput = document.getElementById("pmidInput");
+  importBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = pmidInput.value.trim();
+    const idType = document.getElementById("idTypeSelect").value;
+    if (!id) return;
+    // Show loading
+    stageContainer.innerHTML = `
+      <div class="py-12 text-center">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <p class="mt-4">Checking PubMed and fetching full text...</p>
+      </div>`;
+
+    try {
+      const resp = await fetch(`${API_BASE}/import_pmid`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_type: idType, id }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || `Import failed: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      // On success, use returned filename
+      if (data && data.filename) {
+        currentFilename = data.filename;
+        renderActionView(currentFilename, 0);
+      } else {
+        throw new Error("Import succeeded but no filename returned");
+      }
+    } catch (err) {
+      console.error("Import error:", err);
+      stageContainer.innerHTML = `
+        <div class="alert alert-error">
+          <span>Error: ${err.message}</span>
+        </div>
+        <button id="backBtn" class="btn btn-ghost mt-4">Back</button>`;
+
+      const backBtn = document.getElementById("backBtn");
+      backBtn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        renderUploadView();
+      });
     }
   });
 }

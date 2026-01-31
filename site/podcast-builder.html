@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nord">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Builder - JournalClub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="bg-base-100">
+  <!-- Header injected by header.js -->
+
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-4xl font-bold">Podcast Builder</h1>
+        <p class="text-base-content/70">Select articles to include in a custom episode.</p>
+      </div>
+      <div>
+        <button id="buildBtn" class="btn btn-primary">Build Episode</button>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 p-4">
+      <div class="mb-4">
+        <label class="label"><span class="label-text">Episode title</span></label>
+        <input id="episodeTitle" class="input input-bordered w-full" placeholder="e.g. Weekly highlights" />
+      </div>
+
+      <div>
+        <label class="label"><span class="label-text">Available papers</span></label>
+        <div id="papersList" class="grid grid-cols-1 gap-2 max-h-72 overflow-auto p-2"></div>
+      </div>
+
+      <div class="mt-4">
+        <p class="text-sm text-base-content/70">When you click <strong>Build Episode</strong> the selected articles will be combined, summarised and read aloud sequentially.</p>
+      </div>
+
+      <div id="playerArea" class="mt-4"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="header.js"></script>
+  <script src="podcast-builder.js"></script>
+</body>
+</html>
