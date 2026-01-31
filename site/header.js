@@ -4,6 +4,10 @@ function loadHeader() {
     typeof API_BASE_URL !== "undefined" && API_BASE_URL !== "__API_BASE_URL__"
       ? `${API_BASE_URL}/api/papers`
       : "http://localhost:8000/api/papers";
+  const API_ROOT =
+    typeof API_BASE_URL !== "undefined" && API_BASE_URL !== "__API_BASE_URL__"
+      ? API_BASE_URL
+      : "http://localhost:8000";
 
   const headerHTML = `
       <div class="navbar bg-primary neutral text-neutral-content shadow-lg">
@@ -14,6 +18,8 @@ function loadHeader() {
           <a href="base.html?page=active-papers" class="btn btn-ghost btn-sm">Active Papers</a>
           <a href="base.html?page=topics" class="btn btn-ghost btn-sm">Topics</a>
           <a href="base.html?page=docs" class="btn btn-ghost btn-sm">Documentation</a>
+          <a href="" id="apiSpecLink" class="btn btn-ghost btn-sm">API Spec</a>
+          <a href="" id="swaggerLink" class="btn btn-ghost btn-sm">Swagger UI</a>
             <a href="base.html?page=podcast-builder" class="btn btn-ghost btn-sm gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ff8c00" class="w-4 h-4">
                         <circle cx="6.18" cy="17.82" r="2.18"/>
@@ -27,6 +33,15 @@ function loadHeader() {
 
   // Insert header at the beginning of body
   document.body.insertAdjacentHTML("afterbegin", headerHTML);
+  // wire up API links (use API_ROOT to build absolute URLs)
+  try {
+    const apiSpec = document.getElementById("apiSpecLink");
+    const swagger = document.getElementById("swaggerLink");
+    if (apiSpec) apiSpec.setAttribute("href", `${API_ROOT}/docs`);
+    if (swagger) swagger.setAttribute("href", `${API_ROOT}/swagger-ui`);
+  } catch (e) {
+    // ignore DOM wiring errors
+  }
 }
 
 // Load header when DOM is ready
