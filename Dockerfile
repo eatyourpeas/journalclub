@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y \
 # Copy dependency files
 COPY pyproject.toml ./
 
-# Install Python dependencies (production only, no dev dependencies)
-RUN pip install --no-cache-dir .
-
 # Copy application code
 COPY . .
+
+# Install Python dependencies (production only, no dev dependencies)
+RUN pip install --no-cache-dir .
 
 # Create uploads directory with proper permissions
 RUN mkdir -p /app/uploads && chmod 777 /app/uploads

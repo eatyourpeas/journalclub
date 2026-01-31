@@ -26,7 +26,10 @@ from app.models.schemas import (
 import markdown
 from fastapi.responses import HTMLResponse
 
-DOCS_DIR = Path("docs")
+# Resolve docs directory relative to the package location so it works
+# whether the app is run from the project root, an installed package, or
+# a container where the working directory may differ.
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
 # In-memory storage with expiration

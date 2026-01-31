@@ -54,10 +54,6 @@ uploads/*
 *.log
 *.pdf
 
-# Documentation
-README.md
-docs/
-
 # Docker
 Dockerfile.dev
 docker-compose.yml
