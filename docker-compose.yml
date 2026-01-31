@@ -11,6 +11,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=debug
+      - COQUI_URL=http://coqui:5002
+      - LOCAL_TTS=false
     env_file:
       - envs/.env
     depends_on:

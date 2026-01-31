@@ -8,9 +8,14 @@ import re
 import base64
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+import subprocess
+import tempfile
+import shutil
 
 # Configuration: sidecar host/port and chosen speaker ids
+# If COQUI_URL is empty, the code can fall back to a local espeak-ng backend.
 COQUI_URL = os.getenv("COQUI_URL", "http://coqui:5002")
+LOCAL_TTS = os.getenv("LOCAL_TTS", "false").lower() in ("1", "true", "yes")
 # Podcast voices chosen by user
 PODCAST_VOICE_MALE = os.getenv("PODCAST_VOICE_MALE", "p228")
 PODCAST_VOICE_FEMALE = os.getenv("PODCAST_VOICE_FEMALE", "p316")
@@ -34,6 +39,18 @@ async def synthesize_bytes(
     max_retries = 3
     backoff_base = 1.5
 
+    # If LOCAL_TTS is enabled and COQUI_URL is not set, use local espeak-ng.
+    if LOCAL_TTS or not COQUI_URL:
+        try:
+            return synthesize_espeak_bytes(text)
+        except Exception as e:
+            logger.exception("Local espeak synthesis failed: %s", str(e))
+            # fallback to attempting Coqui if configured
+            if not COQUI_URL:
+                raise HTTPException(
+                    status_code=502, detail="No TTS backend available"
+                ) from e
+
     for attempt in range(1, max_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -45,6 +62,12 @@ async def synthesize_bytes(
                 "Coqui TTS request timed out (attempt %d/%d)", attempt, max_retries
             )
             if attempt == max_retries:
+                # if LOCAL_TTS is allowed, try local fallback before failing
+                if LOCAL_TTS:
+                    try:
+                        return synthesize_espeak_bytes(text)
+                    except Exception:
+                        pass
                 raise HTTPException(
                     status_code=502, detail="TTS service timeout from Coqui sidecar"
                 ) from e
@@ -55,6 +78,12 @@ async def synthesize_bytes(
             if status and 500 <= status < 600 and attempt < max_retries:
                 await asyncio.sleep(backoff_base**attempt)
                 continue
+            # if configured, try local fallback
+            if LOCAL_TTS:
+                try:
+                    return synthesize_espeak_bytes(text)
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=502, detail=f"TTS service error: {status}"
             ) from e
@@ -66,6 +95,11 @@ async def synthesize_bytes(
                 str(e),
             )
             if attempt == max_retries:
+                if LOCAL_TTS:
+                    try:
+                        return synthesize_espeak_bytes(text)
+                    except Exception:
+                        pass
                 raise HTTPException(
                     status_code=502, detail="TTS service unavailable"
                 ) from e
@@ -73,6 +107,35 @@ async def synthesize_bytes(
         await asyncio.sleep(backoff_base**attempt)
     # If we exit the retry loop without returning, raise
     raise HTTPException(status_code=502, detail="TTS service failed after retries")
+
+
+def synthesize_espeak_bytes(text: str) -> bytes:
+    """Synthesize text to WAV using local espeak-ng binary and return bytes.
+
+    This uses a temporary directory and calls `espeak-ng -f infile -w outfile -v en-gb`.
+    """
+    tmpdir = tempfile.mkdtemp()
+    infile = os.path.join(tmpdir, "in.txt")
+    outfile = os.path.join(tmpdir, "out.wav")
+    try:
+        with open(infile, "w", encoding="utf-8") as f:
+            f.write(text)
+
+        cmd = ["espeak-ng", "-f", infile, "-w", outfile, "-v", "en-gb"]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if proc.returncode != 0 or not os.path.exists(outfile):
+            raise RuntimeError(
+                f"espeak-ng failed: {proc.stderr.decode('utf-8', errors='ignore')}"
+            )
+
+        with open(outfile, "rb") as f:
+            data = f.read()
+        return data
+    finally:
+        try:
+            shutil.rmtree(tmpdir)
+        except Exception:
+            pass
 
 
 async def synthesize_stream_response(text: str, speaker: str) -> StreamingResponse:

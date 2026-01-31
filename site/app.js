@@ -28,6 +28,11 @@ function renderUploadView() {
         <input id="pmidInput" type="text" placeholder="Enter ID (e.g. 12345678 or PMC12779737 or 10.1000/xyz)" class="input input-bordered w-full" />
         <button id="importPmidBtn" class="btn btn-primary">Import</button>
       </div>
+
+      <div class="flex justify-end mt-2">
+        <a href="docs.html" class="btn btn-ghost btn-sm">Docs</a>
+        <a href="docs.html" class="btn btn-outline btn-sm ml-2">Deploy / Self-host</a>
+      </div>
     </div>`;
 
   const input = document.getElementById("fileInput");

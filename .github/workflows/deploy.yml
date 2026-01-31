@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      local_tts:
+        description: "Set LOCAL_TTS build arg for the image (true/false)"
+        required: false
+        default: "true"
 
 env:
   REGISTRY: ghcr.io
@@ -12,6 +17,8 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      LOCAL_TTS: ${{ github.event.inputs.local_tts }}
     permissions:
       contents: read
       packages: write
@@ -46,6 +53,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          build-args: |
+            LOCAL_TTS=${{ env.LOCAL_TTS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
