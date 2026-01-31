@@ -12,7 +12,7 @@ function loadHeader() {
   const headerHTML = `
       <div class="navbar bg-primary neutral text-neutral-content shadow-lg">
         <div class="flex-1">
-          <a href="base.html" class="btn btn-ghost normal-case text-xl">JournalClub</a>
+          <a href="base.html" class="btn btn-ghost normal-case text-xl font-['Times_New_Roman',serif]">JournalClub</a>
         </div>
         <div class="flex-none gap-2">
           <a href="base.html?page=active-papers" class="btn btn-ghost btn-sm">Active Papers</a>

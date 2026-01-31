@@ -11,5 +11,25 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=debug
+      - COQUI_URL=http://coqui:5002
+      - LOCAL_TTS=false
     env_file:
       - envs/.env
+    depends_on:
+      - coqui
+
+  coqui:
+    build:
+      context: .
+      dockerfile: docker/coqui/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5002/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s

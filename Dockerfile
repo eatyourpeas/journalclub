@@ -29,6 +29,10 @@ USER appuser
 
 EXPOSE 8000
 
+# Allow build to pass LOCAL_TTS as an ARG; default to true for production images.
+ARG LOCAL_TTS=true
+ENV LOCAL_TTS=${LOCAL_TTS}
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
