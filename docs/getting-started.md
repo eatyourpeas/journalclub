@@ -14,7 +14,7 @@ Welcome to JournalClub! This tool uses AI to summarize and narrate medical resea
 
 - 📄 PDF parsing and text extraction
 - 🤖 AI-powered summarization
-- 🎧 Text-to-speech conversion with natural segues
+- 🎧 Text-to-speech using Microsoft Edge neural voices (no API key required)
 - 📻 RSS podcast feed for your favorite podcast app
 - ⏰ 24-hour retention (perfect for daily use)
 
