@@ -1,78 +1,86 @@
 ## Deploy / Self-host
 
-This guide explains how to self-host JournalClub and configure the TTS backend behavior.
+This guide explains how to self-host JournalClub and configure the TTS backend.
 
-### Defaults
-- The production image defaults to using local `espeak-ng` for TTS (no external Coqui dependency).
-- Development compose keeps a `coqui` service for faster auditioning and model iteration.
+### TTS backend
+
+The service supports three TTS backends, selected via the `TTS_BACKEND` environment variable:
+
+| Value | What it uses | Quality | Speed | Requires |
+|-------|-------------|---------|-------|----------|
+| `edge` | Microsoft Edge neural TTS | Excellent | Fast (~15–40s/paper) | Internet access |
+| `coqui` | Self-hosted Coqui VITS sidecar | Good | Slow on low-CPU hosts | Coqui sidecar container |
+| `local` | Local `espeak-ng` binary | Robotic | Instant | `espeak-ng` installed |
+
+**`edge` is the default** and is strongly recommended for low-resource servers (≤1 vCPU). The compute runs on Microsoft's infrastructure — your server just proxies text and receives the audio stream.
 
 ### Key environment variables
-- `LOCAL_TTS` (true/false): when `true` the application uses the local `espeak-ng` binary; when `false` it will call the configured `COQUI_URL` sidecar for TTS. The production image sets `LOCAL_TTS=true` by default but you can override this at runtime.
-- `COQUI_URL`: URL of a running Coqui sidecar (e.g. `http://coqui:5002`). Only used when `LOCAL_TTS=false`.
 
-### Options
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TTS_BACKEND` | `edge` | TTS backend to use: `edge`, `coqui`, or `local` |
+| `EDGE_TTS_VOICE_MALE` | `en-GB-RyanNeural` | Male voice for edge-tts |
+| `EDGE_TTS_VOICE_FEMALE` | `en-GB-SoniaNeural` | Female voice for edge-tts |
+| `COQUI_URL` | `http://coqui:5002` | Coqui sidecar URL (only used when `TTS_BACKEND=coqui`) |
+| `OLLAMA_BASE_URL` | — | LLM backend URL |
+| `OLLAMA_MODEL` | `llama3.2` | LLM model name |
 
-- Bake models into Coqui image and host on GHCR (recommended if you want deterministic, fast startup).
-  - Pros: no runtime downloads; faster, reproducible startup.
-  - Cons: larger image, longer CI build time.
+For a full list of available edge-tts voice names see [the edge-tts voice list](https://github.com/rany2/edge-tts#voices).
 
-- Runtime download + persistent volume (lighter image)
-  - Pros: smaller images, models downloaded once and persisted to a volume.
-  - Cons: requires persistent storage and initial startup time to download models.
+### Build & run (Docker)
 
-- Use local `espeak-ng` in the FastAPI image
-  - Pros: single container deployment, simple and small dependency surface.
-  - Cons: lower naturalness vs large neural TTS models (but fine for early deployments or low-cost setups).
+```bash
+# Build the production image (edge-tts is the default)
+docker build -t journalclub:latest .
+
+# Run with edge-tts (default, recommended)
+docker run -e TTS_BACKEND=edge -p 8000:8000 journalclub:latest
+
+# Run with espeak-ng (no internet required, robotic quality)
+docker run -e TTS_BACKEND=local -p 8000:8000 journalclub:latest
+
+# Run with Coqui sidecar (needs a separate Coqui container)
+docker run -e TTS_BACKEND=coqui -e COQUI_URL=http://coqui:5002 -p 8000:8000 journalclub:latest
+```
 
 ### Build & Push (GHCR)
 
-1. Configure GitHub Actions to build the production image. The provided workflow supports a `local_tts` input you can set at dispatch time.
-
-2. Manually build and push from your machine:
-
 ```bash
-# Example: build with LOCAL_TTS=false (Coqui) or true (espeak)
-docker build --build-arg LOCAL_TTS=true -t ghcr.io/<OWNER>/journalclub:with-espeak .
-docker push ghcr.io/<OWNER>/journalclub:with-espeak
+docker build -t ghcr.io/<OWNER>/journalclub:latest .
+docker push ghcr.io/<OWNER>/journalclub:latest
 ```
-
-### Northflank / Hosting
-
-- Use the pushed GHCR image as the service image in Northflank.
-- Add an environment variable `LOCAL_TTS=true` or `false` in the Northflank service settings depending on whether you want to use espeak or Coqui.
-- If you use Coqui in production, run a separate Coqui service (internal only) and point `COQUI_URL` to `http://coqui:5002`.
-- For persistent uploads and model caching, create a Persistent Volume and mount it to `/app/uploads` (uploads) and to Coqui's models path if using runtime download.
 
 ### docker-compose (dev)
 
-- The included `docker-compose.yml` is intended for development and keeps the `coqui` service. You can start it via:
+The included `docker-compose.yml` uses Docker Compose [profiles](https://docs.docker.com/compose/profiles/) to control which services start. The `coqui` service is defined but inactive unless the `coqui` profile is explicitly enabled.
 
+**edge or local (default) — API only, no sidecar:**
 ```bash
 docker compose up --build
 ```
 
-### Runtime flags and testing
-
-- To run the production image locally with espeak enabled:
-
+**coqui — starts the API and the Coqui sidecar together:**
 ```bash
-docker run -e LOCAL_TTS=true -p 8000:8000 ghcr.io/<OWNER>/journalclub:with-espeak
+TTS_BACKEND=coqui docker compose --profile coqui up --build
 ```
 
-- To force Coqui (even if the image defaulted to espeak):
+The `TTS_BACKEND` env var tells the API which backend to use; `--profile coqui` tells Compose to also start the sidecar container. Both are needed when using Coqui.
 
-```bash
-docker run -e LOCAL_TTS=false -e COQUI_URL=http://coqui:5002 -p 8000:8000 ghcr.io/<OWNER>/journalclub:with-coqui
-```
+### Northflank / Hosting
+
+- Use the GHCR image as the service image.
+- Set `TTS_BACKEND=edge` in the Northflank service environment (this is the default).
+- No sidecar service is needed for edge-tts.
+- For persistent uploads, create a Persistent Volume mounted to `/app/uploads`.
+- If using Coqui (`TTS_BACKEND=coqui`), run a separate internal Coqui service and set `COQUI_URL` accordingly.
 
 ### Security & Secrets
 
-- `LOCAL_TTS` is not sensitive and does not need to be stored in GitHub Secrets. Set it as a repository variable or in your CI dispatch inputs.
-- Store credentials (GHCR token, Northflank API key) in GitHub Secrets and Northflank Secrets respectively.
+- `TTS_BACKEND` and voice names are not sensitive — set them as repository variables or CI dispatch inputs.
+- Store credentials (GHCR token, Northflank API key, LLM API keys) in GitHub Secrets and Northflank Secrets.
 
 ### Troubleshooting
 
-- If TTS requests fail and `LOCAL_TTS=false`, verify `COQUI_URL` is reachable from the container and the Coqui service is healthy.
-- If models are missing on coqui start, either bake them into the Coqui image or attach a persistent volume for model cache.
-
-If you'd like, I can add a sample GitHub Actions job that builds and tags both `with-espeak` and `with-coqui` variants.
+- **edge-tts returns no audio** — check that your server can reach `speech.platform.bing.com` outbound on port 443.
+- **Coqui TTS requests fail** — verify `COQUI_URL` is reachable and the Coqui service is healthy.
+- **espeak-ng not found** — ensure the `espeak-ng` package is installed in the image (it is included in the provided Dockerfiles).

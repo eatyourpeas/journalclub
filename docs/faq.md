@@ -25,15 +25,16 @@ A: Yes! Upload up to 5 papers, then create a topic to combine them.
 ## Audio & Summarization
 
 **Q: How long does it take to generate audio?**  
-A: Typically 1-2 minutes depending on paper length. The AI needs to:
-1. Generate an optimized script (30-60s)
-2. Convert to audio (30-60s)
+A: Typically 15–40 seconds for a standard paper. The AI needs to:
+
+1. Generate an optimized script (15–30s)
+2. Convert to audio via edge-tts (~5–15s)
 
 **Q: Can I download the audio?**  
 A: Yes! Right-click the audio player and select "Download" or use the RSS feed to sync to your podcast app.
 
 **Q: What voice is used for narration?**  
-A: We use Google's Text-to-Speech (gTTS) with a natural English voice.
+A: We use Microsoft Edge neural TTS (`edge-tts`). The default voices are `en-GB-RyanNeural` (male host) and `en-GB-SoniaNeural` (female co-host). These are high-quality neural voices and require no API key. You can override them with the `EDGE_TTS_VOICE_MALE` and `EDGE_TTS_VOICE_FEMALE` environment variables.
 
 ## Topics
 

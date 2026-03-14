@@ -11,6 +11,7 @@ class LLMService:
     def __init__(self):
         self.base_url = os.getenv("OLLAMA_BASE_URL")
         self.api_key = os.getenv("OLLAMA_API_KEY")
+        # Accept either OLLAMA_MODEL or LLM_MODEL for flexibility
         self.model = os.getenv("OLLAMA_MODEL")
 
         if not all([self.base_url, self.model]):
@@ -30,7 +31,7 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 headers = {"Content-Type": "application/json"}
                 if self.api_key:
                     headers["Ocp-Apim-Subscription-Key"] = self.api_key
@@ -88,7 +89,7 @@ Paper text:
 Respond with valid JSON using these exact keys: summary, key_points, methodology, conclusions"""
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 headers = {"Content-Type": "application/json"}
 
                 if self.api_key:
@@ -283,7 +284,7 @@ Respond with valid JSON using these exact keys: summary, key_points, methodology
             return "The lead author is the first listed author."
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 headers = {"Content-Type": "application/json"}
 
                 if self.api_key:
@@ -569,7 +570,7 @@ Paper text:
 """
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 headers = {"Content-Type": "application/json"}
 
                 if self.api_key:

@@ -25,6 +25,7 @@ from app.services.tts import (
     synthesize_dialog_audio,
     PODCAST_VOICE_MALE,
     PODCAST_VOICE_FEMALE,
+    TTS_AUDIO_MIME,
 )
 from app.services.tts import synthesize_chunks_stream, synthesize_bytes
 import base64
@@ -1112,7 +1113,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
             cache_entry = audio_cache[cache_key]
             if cache_entry["expires"] > datetime.now():
                 audio_stream = io.BytesIO(cache_entry["audio"])
-                return StreamingResponse(audio_stream, media_type="audio/wav")
+                return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
         file_path = UPLOAD_DIR / filename
         if not file_path.exists():
@@ -1251,7 +1252,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
                         }
                         stream = io.BytesIO(audio_bytes)
                         stream.seek(0)
-                        return StreamingResponse(stream, media_type="audio/wav")
+                        return StreamingResponse(stream, media_type=TTS_AUDIO_MIME)
                     except HTTPException:
                         raise
                     except Exception as e:
@@ -1282,7 +1283,9 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
                                 }
                                 stream = io.BytesIO(audio_bytes)
                                 stream.seek(0)
-                                return StreamingResponse(stream, media_type="audio/wav")
+                                return StreamingResponse(
+                                    stream, media_type=TTS_AUDIO_MIME
+                                )
                             except HTTPException:
                                 raise
                             except Exception as e:
@@ -1339,7 +1342,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
 
         audio_stream = io.BytesIO(audio_bytes)
         audio_stream.seek(0)
-        return StreamingResponse(audio_stream, media_type="audio/wav")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -1395,7 +1398,7 @@ async def read_topic_aloud(topic_id: str):
     # Check if already generated and cached
     if topic["audio_bytes"] is not None:
         audio_stream = io.BytesIO(topic["audio_bytes"])
-        return StreamingResponse(audio_stream, media_type="audio/mpeg")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
     try:
         # Extract text from all papers
@@ -1428,7 +1431,7 @@ async def read_topic_aloud(topic_id: str):
 
         audio_stream = io.BytesIO(audio_bytes)
         audio_stream.seek(0)
-        return StreamingResponse(audio_stream, media_type="audio/wav")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
     except Exception as e:
         raise HTTPException(
@@ -1476,8 +1479,6 @@ async def read_aloud_stream(payload: dict):
 
         incoming = (mode or "read").lower()
         if incoming in ("summarise", "summary", "spoken_summary"):
-            llm_mode = "spoken_summary"
-            # produce a summary then stream the spoken_summary chunks
             meta = {}
             try:
                 meta_path = UPLOAD_DIR / f"{filename}.meta.json"
@@ -1486,20 +1487,31 @@ async def read_aloud_stream(payload: dict):
             except Exception:
                 meta = {}
 
-            summary_result = await llm_service.summarise_paper(
-                parsed_text, metadata=meta
-            )
-            feed_text = (
-                summary_result.get("summary")
-                if isinstance(summary_result, dict)
-                else None
-            )
-            if isinstance(feed_text, dict):
-                feed_text = feed_text.get("summary") or parsed_text
-            if not feed_text:
-                feed_text = parsed_text
-
             async def gen():
+                # LLM runs inside generator so HTTP response starts immediately;
+                # keepalive newlines prevent proxy idle-timeout while LLM is working.
+                task = asyncio.create_task(
+                    llm_service.summarise_paper(parsed_text, metadata=meta)
+                )
+                while not task.done():
+                    yield b"\n"
+                    await asyncio.sleep(3)
+                try:
+                    summary_result = await task
+                    feed_text = (
+                        summary_result.get("summary")
+                        if isinstance(summary_result, dict)
+                        else None
+                    )
+                    if isinstance(feed_text, dict):
+                        feed_text = feed_text.get("summary") or parsed_text
+                    if not feed_text:
+                        feed_text = parsed_text
+                except Exception as e:
+                    logger.exception("Summary LLM failed in stream: %s", str(e))
+                    yield (json.dumps({"error": str(e)}) + "\n").encode("utf-8")
+                    return
+
                 async for idx, b in synthesize_chunks_stream(
                     feed_text, voice="coqui-tts:en_vctk", speaker=PODCAST_VOICE_MALE
                 ):
@@ -1518,7 +1530,6 @@ async def read_aloud_stream(payload: dict):
             return StreamingResponse(gen(), media_type="application/x-ndjson")
 
         elif incoming == "podcast":
-            # use the LLM to generate structured dialog, then stream per-turn audio
             meta = {}
             try:
                 meta_path = UPLOAD_DIR / f"{filename}.meta.json"
@@ -1527,28 +1538,41 @@ async def read_aloud_stream(payload: dict):
             except Exception:
                 meta = {}
 
-            result = await llm_service.generate_text_to_speech_script(
-                parsed_text, mode="podcast", metadata=meta
-            )
-            dialog = None
-            if isinstance(result, dict) and "dialog" in result:
-                dialog = result.get("dialog")
-            elif isinstance(result, str):
-                try:
-                    parsed = json.loads(result)
-                    if isinstance(parsed, dict) and "dialog" in parsed:
-                        dialog = parsed.get("dialog")
-                except Exception:
-                    # ignore
-                    dialog = None
-
-            if not dialog:
-                raise HTTPException(
-                    status_code=500, detail="Podcast dialog generation failed"
-                )
-
             async def gen_dialog():
-                # stream each dialog turn as its own chunk
+                # LLM runs inside generator so HTTP response starts immediately;
+                # keepalive newlines prevent proxy idle-timeout while LLM is working.
+                task = asyncio.create_task(
+                    llm_service.generate_text_to_speech_script(
+                        parsed_text, mode="podcast", metadata=meta
+                    )
+                )
+                while not task.done():
+                    yield b"\n"
+                    await asyncio.sleep(3)
+                try:
+                    result = await task
+                except Exception as e:
+                    logger.exception("Podcast LLM failed in stream: %s", str(e))
+                    yield (json.dumps({"error": str(e)}) + "\n").encode("utf-8")
+                    return
+
+                dialog = None
+                if isinstance(result, dict) and "dialog" in result:
+                    dialog = result.get("dialog")
+                elif isinstance(result, str):
+                    try:
+                        p = json.loads(result)
+                        if isinstance(p, dict) and "dialog" in p:
+                            dialog = p.get("dialog")
+                    except Exception:
+                        dialog = None
+
+                if not dialog:
+                    yield (
+                        json.dumps({"error": "Podcast dialog generation failed"}) + "\n"
+                    ).encode("utf-8")
+                    return
+
                 for idx, turn in enumerate(dialog, start=1):
                     text = (turn.get("text") or "").strip()
                     if not text:
@@ -1559,7 +1583,6 @@ async def read_aloud_stream(payload: dict):
                         if speaker_hint in ("guest", "female")
                         else PODCAST_VOICE_MALE
                     )
-                    # synthesize this turn (single call) and yield
                     b = await synthesize_bytes(
                         text=text, voice="coqui-tts:en_vctk", speaker=speaker_id
                     )
@@ -1571,6 +1594,7 @@ async def read_aloud_stream(payload: dict):
                                 "idx": idx,
                                 "audio_b64": base64.b64encode(b).decode("ascii"),
                                 "speaker": turn.get("speaker"),
+                                "text": turn.get("text"),
                             }
                         )
                         + "\n"

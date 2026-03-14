@@ -11,14 +11,14 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=debug
-      - COQUI_URL=http://coqui:5002
-      - LOCAL_TTS=false
+      - TTS_BACKEND=edge
     env_file:
       - envs/.env
-    depends_on:
-      - coqui
 
+  # Coqui sidecar — only starts when you run: docker compose --profile coqui up
+  # Set TTS_BACKEND=coqui in the api environment when using this profile.
   coqui:
+    profiles: [coqui]
     build:
       context: .
       dockerfile: docker/coqui/Dockerfile

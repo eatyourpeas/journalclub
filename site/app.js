@@ -60,7 +60,11 @@ function renderUploadView() {
       const data = await resp.json();
       if (!data || !data.filename) throw new Error("No filename returned");
       currentFilename = data.filename;
-      renderActionView(currentFilename, data.total_pages || 0);
+      renderActionView(
+        currentFilename,
+        data.total_pages || 0,
+        data.word_count || 0,
+      );
     } catch (err) {
       console.error("Import error", err);
       stageContainer.innerHTML = `<div class="alert alert-error"><span>Error: ${err.message}</span></div><button id="backBtn" class="btn btn-ghost mt-4">Back</button>`;
@@ -71,9 +75,15 @@ function renderUploadView() {
   });
 }
 
-function renderActionView(filename, pages) {
+function renderActionView(filename, pages, wordCount) {
+  const pageInfo =
+    pages > 0
+      ? `${pages} pages`
+      : wordCount > 0
+        ? `~${wordCount.toLocaleString()} words`
+        : "parsed";
   stageContainer.innerHTML = `
-    <div class="alert alert-success shadow-sm mb-4"><span><strong>Ready:</strong> ${filename} (${pages} pages)</span></div>
+    <div class="alert alert-success shadow-sm mb-4"><span><strong>Ready:</strong> ${filename} (${pageInfo})</span></div>
     <div class="flex gap-4">
       <div class="flex gap-2 items-center flex-1">
         <select id="listenModeSelect" class="select select-bordered w-full">
@@ -121,7 +131,11 @@ async function uploadFile(file) {
     if (!resp.ok) throw new Error(`Upload Failed: ${resp.status}`);
     const data = await resp.json();
     currentFilename = data.filename;
-    renderActionView(currentFilename, data.total_pages || 0);
+    renderActionView(
+      currentFilename,
+      data.total_pages || 0,
+      data.word_count || 0,
+    );
   } catch (err) {
     console.error("Upload error", err);
     stageContainer.innerHTML = `<div class="alert alert-error"><span>Error: ${err.message}</span></div><button id="tryAgainBtn" class="btn btn-primary mt-4">Try Again</button>`;
@@ -165,183 +179,215 @@ async function handleRead(mode = "full") {
 async function handleReadAloud(mode = "full") {
   const area = document.getElementById("resultArea");
   area.classList.remove("hidden");
-  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="audioContainer"><div class="flex flex-col gap-4"><ul class="steps steps-vertical"><li id="step1" class="step step-primary">Generating script...</li><li id="step2" class="step">Converting to audio...</li><li id="step3" class="step">Ready to play</li></ul><progress class="progress progress-secondary w-full" value="33" max="100"></progress><p class="text-sm text-base-content/70">This may take 1-2 minutes</p></div></div></div>`;
-  const startTime = Date.now();
-  try {
-    const scriptResp = await fetch(`${API_BASE}/tts-script`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filename: currentFilename,
-        mode:
-          mode === "full"
-            ? "read_aloud_full"
-            : mode === "summary"
-              ? "spoken_summary"
-              : "podcast",
-      }),
-    });
-    if (!scriptResp.ok)
-      throw new Error(`Script generation failed: ${scriptResp.status}`);
-    const scriptData = await scriptResp.json();
-    const container = document.getElementById("audioContainer");
-    container.innerHTML = `<div class="flex flex-col gap-4"><ul class="steps steps-vertical"><li class="step step-primary">Generating script ✓</li><li id="step2" class="step step-primary">Converting to audio...</li><li id="step3" class="step">Ready to play</li></ul><progress class="progress progress-secondary w-full" value="66" max="100"></progress><p class="text-sm text-base-content/70">Almost done...</p></div>`;
+  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="audioContainer"><div class="flex flex-col gap-4"><p class="text-sm font-semibold" id="statusMsg">Starting...</p><progress class="progress progress-secondary w-full" value="5" max="100" id="mainBar"></progress></div></div></div>`;
 
-    if (mode === "podcast") {
-      const dialogResp = await fetch(`${API_BASE}/read_aloud`, {
+  const startTime = Date.now();
+  function elapsedSec() {
+    return Math.round((Date.now() - startTime) / 1000);
+  }
+  let _ticker = null;
+  function startTicker(msgFn) {
+    if (_ticker) clearInterval(_ticker);
+    _ticker = setInterval(() => {
+      const el = document.getElementById("statusMsg");
+      if (el) el.textContent = msgFn();
+    }, 1000);
+  }
+  function stopTicker() {
+    if (_ticker) {
+      clearInterval(_ticker);
+      _ticker = null;
+    }
+  }
+
+  // Decode a base64 audio chunk into a Uint8Array
+  function decodeChunk(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  // Read an NDJSON stream, calling onLine(obj) for each parsed JSON line,
+  // onKeepalive() for blank keepalive lines, and returning when the stream ends.
+  async function readNdjsonStream(resp, onLine, onKeepalive) {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) {
+          onKeepalive && onKeepalive();
+          continue;
+        }
+        try {
+          const obj = JSON.parse(line);
+          onLine(obj);
+        } catch (e) {
+          console.warn("NDJSON parse error:", e, line);
+        }
+      }
+    }
+  }
+
+  const controller = new AbortController();
+
+  try {
+    // -------------------------------------------------------------------------
+    // Full / Summary — single stream call, no LLM pre-call needed for "full"
+    // -------------------------------------------------------------------------
+    if (mode !== "podcast") {
+      const streamMode = mode === "summary" ? "summarise" : "full";
+      const initMsg =
+        mode === "summary" ? "Summarising paper" : "Processing paper";
+      startTicker(() => `${initMsg}... (${elapsedSec()}s)`);
+
+      const resp = await fetch(`${API_BASE}/read_aloud/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: currentFilename, mode: "podcast" }),
+        signal: controller.signal,
+        body: JSON.stringify({ filename: currentFilename, mode: streamMode }),
       });
-      if (!dialogResp.ok)
-        throw new Error(`Dialog generation failed: ${dialogResp.status}`);
-      const dialogJson = await dialogResp.json();
-      const turns = dialogJson.dialog || [];
-      container.innerHTML = `<div class="flex flex-col gap-4"><div class="alert alert-success"><span>Dialog ready! (Generated in ${Math.round((Date.now() - startTime) / 1000)}s)</span></div><h3 class="text-lg font-bold text-neutral">Podcast Dialog</h3><div class="mb-2">Buffer: <progress id="bufferBar" class="progress progress-info w-full" value="0" max="100"></progress></div><div id="dialogList" class="space-y-2"></div></div>`;
-      const dialogList = document.getElementById("dialogList");
-      const audioUrls = {};
-      const statusEls = {};
-      const totalTurns = turns.length;
-      let bufferedCount = 0;
-      const bufferThreshold = Math.min(2, totalTurns);
-      let nextToPlay = 1;
-      let isPlaying = false;
-      function updateBufferBar() {
-        const bar = document.getElementById("bufferBar");
-        if (!bar) return;
-        bar.value = Math.round((bufferedCount / totalTurns) * 100);
-      }
-      function playAudioUrl(url) {
-        return new Promise((resolve) => {
-          const a = new Audio(url);
-          a.addEventListener("ended", () => resolve());
-          a.addEventListener("error", () => resolve());
-          a.play().catch(() => resolve());
-        });
-      }
-      async function playSequence() {
-        if (isPlaying) return;
-        isPlaying = true;
-        while (nextToPlay <= totalTurns) {
-          const key = String(nextToPlay);
-          if (!audioUrls[key]) {
-            await new Promise((r) => setTimeout(r, 250));
-            if (!audioUrls[key]) break;
-          }
-          try {
-            if (statusEls[key]) statusEls[key].textContent = "playing";
-            await playAudioUrl(audioUrls[key]);
-            if (statusEls[key]) statusEls[key].textContent = "played";
-          } catch (e) {
-            console.error("Playback error for turn", nextToPlay, e);
-            if (statusEls[key]) statusEls[key].textContent = "error";
-          }
-          nextToPlay += 1;
-        }
-        isPlaying = false;
-      }
-      turns.forEach((turn, idx) => {
-        const div = document.createElement("div");
-        div.className = "p-3 bg-base-200 rounded-box flex items-start gap-3";
-        const speaker = document.createElement("strong");
-        speaker.textContent = (turn.speaker || "host").toUpperCase() + ": ";
-        const p = document.createElement("p");
-        p.className = "flex-1 text-sm whitespace-pre-wrap";
-        p.textContent = turn.text || "";
-        const status = document.createElement("span");
-        status.className = "text-xs text-base-content/60";
-        status.textContent = "pending";
-        const btn = document.createElement("button");
-        btn.className = "btn btn-sm btn-outline";
-        btn.textContent = "Play";
-        btn.dataset.idx = idx + 1;
-        statusEls[String(idx + 1)] = status;
-        btn.addEventListener("click", async () => {
-          try {
-            const idxKey = btn.dataset.idx;
-            if (audioUrls[idxKey]) {
-              new Audio(audioUrls[idxKey]).play();
-              return;
-            }
-            const sp = (turn.speaker || "host").toLowerCase();
-            const speakerVoice =
-              sp === "guest" || sp === "female" ? "female" : "male";
-            const resp = await fetch("/api/tts/speak", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ speaker: speakerVoice, text: turn.text }),
-            });
-            if (!resp.ok) throw new Error(`TTS speak failed: ${resp.status}`);
-            const b = await resp.blob();
-            const url = URL.createObjectURL(b);
-            audioUrls[idxKey] = url;
-            new Audio(url).play();
-          } catch (e) {
-            console.error("Play turn error:", e);
-            alert("Error playing turn: " + e.message);
-          }
-        });
-        div.appendChild(speaker);
-        div.appendChild(p);
-        div.appendChild(status);
-        div.appendChild(btn);
-        dialogList.appendChild(div);
-      });
+      if (!resp.ok) throw new Error(`Stream request failed: ${resp.status}`);
 
-      try {
-        const streamResp = await fetch(`${API_BASE}/read_aloud/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: currentFilename, mode: "podcast" }),
-        });
-        if (streamResp.ok && streamResp.body) {
-          const reader = streamResp.body.getReader();
-          const decoder = new TextDecoder();
-          let buf = "";
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            const parts = buf.split("\n");
-            buf = parts.pop();
-            for (const line of parts) {
-              if (!line.trim()) continue;
-              try {
-                const obj = JSON.parse(line);
-                if (obj && obj.audio_b64) {
-                  const binary = atob(obj.audio_b64);
-                  const len = binary.length;
-                  const bytes = new Uint8Array(len);
-                  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-                  const blob = new Blob([bytes.buffer], { type: "audio/wav" });
-                  const url = URL.createObjectURL(blob);
-                  const key = String(obj.idx);
-                  if (!audioUrls[key]) {
-                    audioUrls[key] = url;
-                    bufferedCount += 1;
-                    if (statusEls[key]) statusEls[key].textContent = "buffered";
-                    updateBufferBar();
-                  }
-                  if (bufferedCount >= bufferThreshold && !isPlaying)
-                    playSequence();
-                }
-              } catch (e) {
-                console.error("Error parsing podcast stream line:", e, line);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Podcast audio stream error:", e);
-      }
+      const container = document.getElementById("audioContainer");
+      container.innerHTML = `<div class="flex flex-col gap-4"><p class="text-sm font-semibold" id="statusMsg">${initMsg}...</p><progress class="progress progress-secondary w-full" value="5" max="100" id="mainBar"></progress><p class="text-xs text-base-content/50">The server sends keepalive updates — this won't time out.</p></div>`;
 
+      const audioChunks = [];
+      await readNdjsonStream(
+        resp,
+        (obj) => {
+          if (obj.error) throw new Error(obj.error);
+          if (obj.audio_b64) {
+            audioChunks.push(decodeChunk(obj.audio_b64));
+            const bar = document.getElementById("mainBar");
+            const msg = document.getElementById("statusMsg");
+            if (bar) bar.value = Math.min(95, 5 + audioChunks.length * 25);
+            if (msg)
+              msg.textContent = `Receiving audio... chunk ${audioChunks.length} (${elapsedSec()}s)`;
+          }
+        },
+        () => {
+          const msg = document.getElementById("statusMsg");
+          if (msg) msg.textContent = `${initMsg}... (${elapsedSec()}s)`;
+        },
+      );
+
+      stopTicker();
+      if (!audioChunks.length) throw new Error("No audio received from server");
+
+      const audioBlob = new Blob(audioChunks, { type: "audio/mpeg" });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      container.innerHTML = `<div class="flex flex-col gap-4"><div class="alert alert-success"><span>Ready in ${elapsedSec()}s</span></div><audio controls autoplay class="w-full" src="${audioUrl}"></audio><a href="${audioUrl}" download="journal-club.mp3" class="btn btn-outline btn-sm w-fit">⬇ Download</a></div>`;
       return;
     }
+
+    // -------------------------------------------------------------------------
+    // Podcast — single stream call; dialog text now included in each chunk
+    // -------------------------------------------------------------------------
+    startTicker(() => `Generating podcast... (${elapsedSec()}s)`);
+
+    const resp = await fetch(`${API_BASE}/read_aloud/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({ filename: currentFilename, mode: "podcast" }),
+    });
+    if (!resp.ok) throw new Error(`Podcast stream failed: ${resp.status}`);
+
+    const container = document.getElementById("audioContainer");
+    container.innerHTML = `<div class="flex flex-col gap-4"><p class="text-sm font-semibold" id="statusMsg">Generating podcast dialog...</p><progress class="progress progress-info w-full" value="0" max="100" id="mainBar"></progress><div id="dialogList" class="space-y-2 mt-2"></div></div>`;
+
+    const audioUrls = {};
+    const statusEls = {};
+    let totalTurns = 0;
+    let nextToPlay = 1;
+    let isPlaying = false;
+
+    function playAudioUrl(url) {
+      return new Promise((resolve) => {
+        const a = new Audio(url);
+        a.addEventListener("ended", resolve);
+        a.addEventListener("error", resolve);
+        a.play().catch(resolve);
+      });
+    }
+
+    async function playNext() {
+      if (isPlaying) return;
+      isPlaying = true;
+      while (audioUrls[String(nextToPlay)]) {
+        const key = String(nextToPlay);
+        if (statusEls[key]) statusEls[key].textContent = "▶ playing";
+        await playAudioUrl(audioUrls[key]);
+        if (statusEls[key]) statusEls[key].textContent = "✓";
+        nextToPlay++;
+      }
+      isPlaying = false;
+    }
+
+    await readNdjsonStream(
+      resp,
+      (obj) => {
+        if (obj.error) throw new Error(obj.error);
+        if (obj.audio_b64) {
+          totalTurns++;
+          const key = String(obj.idx);
+
+          // Add dialog turn to UI
+          const dialogList = document.getElementById("dialogList");
+          if (dialogList) {
+            const div = document.createElement("div");
+            div.className =
+              "p-3 bg-base-200 rounded-box flex items-start gap-3";
+            div.innerHTML = `<strong class="shrink-0">${(obj.speaker || "host").toUpperCase()}:</strong><p class="flex-1 text-sm">${obj.text || ""}</p><span class="text-xs text-base-content/50 shrink-0" id="turn-status-${key}">buffered</span>`;
+            dialogList.appendChild(div);
+            statusEls[key] = document.getElementById(`turn-status-${key}`);
+          }
+
+          audioUrls[key] = URL.createObjectURL(
+            new Blob([decodeChunk(obj.audio_b64)], { type: "audio/mpeg" }),
+          );
+          const bar = document.getElementById("mainBar");
+          const msg = document.getElementById("statusMsg");
+          if (bar) bar.value = Math.min(95, totalTurns * 10);
+          if (msg)
+            msg.textContent = `Buffered ${totalTurns} turn${totalTurns > 1 ? "s" : ""}... (${elapsedSec()}s)`;
+
+          if (totalTurns >= 2 && !isPlaying) playNext();
+        }
+      },
+      () => {
+        const msg = document.getElementById("statusMsg");
+        if (msg) msg.textContent = `Generating podcast... (${elapsedSec()}s)`;
+      },
+    );
+
+    stopTicker();
+    // Play anything remaining
+    playNext();
+    const msg = document.getElementById("statusMsg");
+    if (msg)
+      msg.textContent = `Podcast ready (${elapsedSec()}s) — ${totalTurns} turns`;
+    const bar = document.getElementById("mainBar");
+    if (bar) bar.value = 100;
   } catch (err) {
+    stopTicker();
     console.error("Read aloud error:", err);
     const audioContainer = document.getElementById("audioContainer");
-    if (audioContainer)
-      audioContainer.innerHTML = `<div class="alert alert-error"><span>Error: ${err.message}</span></div>`;
+    if (audioContainer) {
+      const isAbort = err.name === "AbortError";
+      const msg = isAbort ? "Cancelled." : `Error: ${err.message}`;
+      audioContainer.innerHTML = `<div class="flex flex-col gap-4"><div class="alert alert-error"><span>${msg}</span></div><button id="retryBtn" class="btn btn-primary btn-sm w-fit">Try Again</button></div>`;
+      document
+        .getElementById("retryBtn")
+        ?.addEventListener("click", () => handleReadAloud(mode));
+    }
   }
 }
 

@@ -29,9 +29,9 @@ USER appuser
 
 EXPOSE 8000
 
-# Allow build to pass LOCAL_TTS as an ARG; default to true for production images.
-ARG LOCAL_TTS=true
-ENV LOCAL_TTS=${LOCAL_TTS}
+# TTS backend: edge (default, fast, no API key), coqui (sidecar), local (espeak-ng)
+ARG TTS_BACKEND=edge
+ENV TTS_BACKEND=${TTS_BACKEND}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
