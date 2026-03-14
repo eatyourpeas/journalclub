@@ -52,13 +52,19 @@ docker push ghcr.io/<OWNER>/journalclub:latest
 
 ### docker-compose (dev)
 
-The included `docker-compose.yml` starts the API with `TTS_BACKEND=edge`. No sidecar is required. Start it with:
+The included `docker-compose.yml` uses Docker Compose [profiles](https://docs.docker.com/compose/profiles/) to control which services start. The `coqui` service is defined but inactive unless the `coqui` profile is explicitly enabled.
 
+**edge or local (default) — API only, no sidecar:**
 ```bash
 docker compose up --build
 ```
 
-To develop against the Coqui sidecar instead, set `TTS_BACKEND=coqui` in `docker-compose.yml` and uncomment the `coqui` service block.
+**coqui — starts the API and the Coqui sidecar together:**
+```bash
+TTS_BACKEND=coqui docker compose --profile coqui up --build
+```
+
+The `TTS_BACKEND` env var tells the API which backend to use; `--profile coqui` tells Compose to also start the sidecar container. Both are needed when using Coqui.
 
 ### Northflank / Hosting
 
