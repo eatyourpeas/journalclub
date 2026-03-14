@@ -44,6 +44,7 @@ TTS_AUDIO_MIME: str = "audio/mpeg" if TTS_BACKEND == "edge" else "audio/wav"
 # edge-tts backend (default)
 # ---------------------------------------------------------------------------
 
+
 async def synthesize_edge_bytes(text: str, voice: str) -> bytes:
     """Synthesize text via Microsoft Edge TTS. Returns MP3 bytes. No API key required."""
     try:
@@ -68,6 +69,7 @@ async def synthesize_edge_bytes(text: str, voice: str) -> bytes:
 # ---------------------------------------------------------------------------
 # Coqui sidecar backend
 # ---------------------------------------------------------------------------
+
 
 async def synthesize_coqui_bytes(
     text: str, voice: str = "coqui-tts:en_vctk", speaker: str | None = None
@@ -104,7 +106,10 @@ async def synthesize_coqui_bytes(
             ) from e
         except httpx.RequestError as e:
             logger.warning(
-                "Coqui TTS request error (attempt %d/%d): %s", attempt, max_retries, str(e)
+                "Coqui TTS request error (attempt %d/%d): %s",
+                attempt,
+                max_retries,
+                str(e),
             )
             if attempt == max_retries:
                 raise HTTPException(
@@ -117,6 +122,7 @@ async def synthesize_coqui_bytes(
 # ---------------------------------------------------------------------------
 # Dispatcher — routes call this; backend is selected by TTS_BACKEND env var
 # ---------------------------------------------------------------------------
+
 
 async def synthesize_bytes(
     text: str, voice: str = "coqui-tts:en_vctk", speaker: str | None = None
@@ -237,7 +243,9 @@ async def synthesize_concatenated(
                 "Synthesizing chunk %d/%d (chars=%d)", idx, len(chunks), len(chunk_text)
             )
             try:
-                b = await synthesize_bytes(text=chunk_text, voice=voice, speaker=speaker)
+                b = await synthesize_bytes(
+                    text=chunk_text, voice=voice, speaker=speaker
+                )
                 return idx, b
             except Exception as e:
                 logger.exception("Error synthesizing chunk %d: %s", idx, str(e))
@@ -261,13 +269,17 @@ async def synthesize_concatenated(
             if wave_params is None:
                 wave_params = params
             elif params[:3] != wave_params[:3]:
-                logger.warning("Incompatible WAV params between chunks; using first chunk params")
+                logger.warning(
+                    "Incompatible WAV params between chunks; using first chunk params"
+                )
             frames_list.append(frames)
         except Exception as e:
             logger.exception("Error processing WAV for chunk %d: %s", idx, str(e))
 
     if not frames_list or wave_params is None:
-        raise HTTPException(status_code=502, detail="TTS synthesis failed for all chunks")
+        raise HTTPException(
+            status_code=502, detail="TTS synthesis failed for all chunks"
+        )
 
     out_bio = io.BytesIO()
     with wave.open(out_bio, "wb") as out_w:
@@ -359,7 +371,8 @@ async def synthesize_dialog_audio(
                 wave_params = params
             elif params[:3] != wave_params[:3]:
                 logger.warning(
-                    "Incompatible WAV params for dialog turn %d; using first chunk params", idx
+                    "Incompatible WAV params for dialog turn %d; using first chunk params",
+                    idx,
                 )
             frames_list.append(frames)
             if pause_ms and wave_params is not None:

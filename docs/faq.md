@@ -26,6 +26,7 @@ A: Yes! Upload up to 5 papers, then create a topic to combine them.
 
 **Q: How long does it take to generate audio?**  
 A: Typically 15–40 seconds for a standard paper. The AI needs to:
+
 1. Generate an optimized script (15–30s)
 2. Convert to audio via edge-tts (~5–15s)
 
