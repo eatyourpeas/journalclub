@@ -25,6 +25,7 @@ from app.services.tts import (
     synthesize_dialog_audio,
     PODCAST_VOICE_MALE,
     PODCAST_VOICE_FEMALE,
+    TTS_AUDIO_MIME,
 )
 from app.services.tts import synthesize_chunks_stream, synthesize_bytes
 import base64
@@ -1112,7 +1113,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
             cache_entry = audio_cache[cache_key]
             if cache_entry["expires"] > datetime.now():
                 audio_stream = io.BytesIO(cache_entry["audio"])
-                return StreamingResponse(audio_stream, media_type="audio/wav")
+                return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
         file_path = UPLOAD_DIR / filename
         if not file_path.exists():
@@ -1251,7 +1252,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
                         }
                         stream = io.BytesIO(audio_bytes)
                         stream.seek(0)
-                        return StreamingResponse(stream, media_type="audio/wav")
+                        return StreamingResponse(stream, media_type=TTS_AUDIO_MIME)
                     except HTTPException:
                         raise
                     except Exception as e:
@@ -1282,7 +1283,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
                                 }
                                 stream = io.BytesIO(audio_bytes)
                                 stream.seek(0)
-                                return StreamingResponse(stream, media_type="audio/wav")
+                                return StreamingResponse(stream, media_type=TTS_AUDIO_MIME)
                             except HTTPException:
                                 raise
                             except Exception as e:
@@ -1339,7 +1340,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
 
         audio_stream = io.BytesIO(audio_bytes)
         audio_stream.seek(0)
-        return StreamingResponse(audio_stream, media_type="audio/wav")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -1395,7 +1396,7 @@ async def read_topic_aloud(topic_id: str):
     # Check if already generated and cached
     if topic["audio_bytes"] is not None:
         audio_stream = io.BytesIO(topic["audio_bytes"])
-        return StreamingResponse(audio_stream, media_type="audio/mpeg")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
     try:
         # Extract text from all papers
@@ -1428,7 +1429,7 @@ async def read_topic_aloud(topic_id: str):
 
         audio_stream = io.BytesIO(audio_bytes)
         audio_stream.seek(0)
-        return StreamingResponse(audio_stream, media_type="audio/wav")
+        return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
     except Exception as e:
         raise HTTPException(
