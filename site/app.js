@@ -168,7 +168,31 @@ async function handleRead(mode = "full") {
     if (!resp.ok) throw new Error(`Script failed: ${resp.status}`);
     const data = await resp.json();
     const preview = document.getElementById("previewArea");
-    preview.innerHTML = `<pre class="whitespace-pre-wrap">${data.script || data.dialog || JSON.stringify(data, null, 2)}</pre>`;
+
+    const escapeHtml = (value) =>
+      String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    let previewText = "";
+    if (typeof data.script === "string" && data.script.trim()) {
+      previewText = data.script;
+    } else if (Array.isArray(data.dialog) && data.dialog.length > 0) {
+      previewText = data.dialog
+        .map((turn) => {
+          const speaker = (turn && turn.speaker) || "speaker";
+          const text = (turn && turn.text) || "";
+          return `${speaker.toUpperCase()}: ${text}`;
+        })
+        .join("\n\n");
+    } else {
+      previewText = JSON.stringify(data, null, 2);
+    }
+
+    preview.innerHTML = `<pre class="whitespace-pre-wrap">${escapeHtml(previewText)}</pre>`;
   } catch (err) {
     console.error("Preview error", err);
     const preview = document.getElementById("previewArea");

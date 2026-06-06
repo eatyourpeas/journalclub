@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from time import perf_counter
+import asyncio
 from app.models.schemas import TopicRequest, TopicResponse
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Request
 import uuid
@@ -226,9 +227,54 @@ def _normalize_pdf_linebreaks_for_tts(text: str) -> str:
     return t.strip()
 
 
+def _remove_glossary_sections(text: str) -> str:
+    """Remove glossary-like sections that should not be narrated in full-read mode."""
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    out: list[str] = []
+    in_glossary = False
+
+    glossary_heading = re.compile(
+        r"(?im)^\s*(?:"
+        r"glossary|glossaries|abbreviations?|nomenclature|terminology|"
+        r"key\s+terms?|list\s+of\s+abbreviations?"
+        r")(?:\s+of\s+terms?)?\s*:?[\s.]*$"
+    )
+    major_section_heading = re.compile(
+        r"(?im)^\s*(?:\d+(?:\.\d+)*\s*)?(?:"
+        r"introduction|background|methods?|materials\s+and\s+methods|"
+        r"results?|discussion|conclusions?|limitations?|"
+        r"references|bibliography|acknowledg(?:e)?ments?"
+        r")\b"
+    )
+
+    for raw_line in lines:
+        line = raw_line.strip()
+
+        if not in_glossary and glossary_heading.match(line):
+            in_glossary = True
+            continue
+
+        if in_glossary:
+            # Resume once we hit a known narrative section.
+            if major_section_heading.match(line):
+                in_glossary = False
+                out.append(raw_line)
+            continue
+
+        out.append(raw_line)
+
+    cleaned = "\n".join(out)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def _build_read_mode_script(parsed_text: str, filename: str) -> str:
     """Build deterministic full-read script from body text + concise metadata intro."""
     main_body = _strip_front_matter(parsed_text, remove_abstract=True)
+    main_body = _remove_glossary_sections(main_body)
     main_body = _normalize_pdf_linebreaks_for_tts(main_body)
     intro = _build_intro_from_meta(filename)
     script_text = intro + main_body
@@ -269,16 +315,60 @@ def _load_metadata_sidecar(filename: str) -> dict:
     return {}
 
 
-async def _build_content_for_mode(filename: str, parsed_text: str, mode: str) -> str:
+def _fallback_spoken_summary(parsed_text: str, filename: str) -> str:
+    """Create a short deterministic spoken summary when LLM output is unavailable."""
+    read_script = _build_read_mode_script(parsed_text, filename)
+    if not read_script:
+        return "Summary unavailable."
+
+    sentences = re.split(r"(?<=[.!?])\s+", read_script)
+    compact = [s.strip() for s in sentences if s and s.strip()]
+    # Intro + first few sentences gives a stable spoken-summary fallback.
+    return " ".join(compact[:8]).strip()
+
+
+def _fallback_podcast_dialog(parsed_text: str, filename: str) -> dict:
+    """Create a minimal two-speaker dialog fallback from deterministic summary text."""
+    summary = _fallback_spoken_summary(parsed_text, filename)
+    if not summary:
+        summary = "We could not generate a podcast script for this paper."
+    return {
+        "dialog": [
+            {
+                "speaker": "host",
+                "text": "Welcome. Here is a quick discussion of this paper.",
+            },
+            {"speaker": "guest", "text": summary},
+        ]
+    }
+
+
+async def _build_content_for_mode(filename: str, parsed_text: str, mode: str):
     """Return script text or dialog object using one shared content pipeline."""
     normalized = _normalize_mode(mode)
     if normalized == "read":
         return _build_read_mode_script(parsed_text, filename)
 
     metadata = _load_metadata_sidecar(filename)
-    return await llm_service.generate_text_to_speech_script(
+    result = await llm_service.generate_text_to_speech_script(
         parsed_text, mode=normalized, metadata=metadata
     )
+
+    if normalized == "spoken_summary":
+        if isinstance(result, str) and result.strip():
+            return result
+        return _fallback_spoken_summary(parsed_text, filename)
+
+    if normalized == "podcast":
+        if (
+            isinstance(result, dict)
+            and isinstance(result.get("dialog"), list)
+            and any((turn or {}).get("text", "").strip() for turn in result["dialog"])
+        ):
+            return result
+        return _fallback_podcast_dialog(parsed_text, filename)
+
+    return result
 
 
 # Background task processor
@@ -1513,6 +1603,8 @@ async def read_aloud_stream(payload: dict):
             read_script = await _build_content_for_mode(
                 filename, parsed_text, mode or "read"
             )
+            if not isinstance(read_script, str):
+                read_script = _build_read_mode_script(parsed_text, filename)
 
             async def gen_full():
                 tts_started = perf_counter()
