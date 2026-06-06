@@ -345,19 +345,110 @@ def _fallback_spoken_summary(parsed_text: str, filename: str) -> str:
 
 
 def _fallback_podcast_dialog(parsed_text: str, filename: str) -> dict:
-    """Create a minimal two-speaker dialog fallback from deterministic summary text."""
-    summary = _fallback_spoken_summary(parsed_text, filename)
-    if not summary:
-        summary = "We could not generate a podcast script for this paper."
+    """Create a structured multi-turn fallback dialog with key scientific beats."""
+    base_script = _build_read_mode_script(parsed_text, filename)
+    sentences = [
+        s.strip() for s in re.split(r"(?<=[.!?])\s+", base_script) if s and s.strip()
+    ]
+
+    def _pick(pattern: str, default_idx: int) -> str:
+        rx = re.compile(pattern, re.IGNORECASE)
+        for s in sentences:
+            if rx.search(s):
+                return s
+        if sentences:
+            return sentences[min(default_idx, len(sentences) - 1)]
+        return ""
+
+    objective = _pick(r"\b(objective|aim|purpose|investigat|research\s+question)\b", 1)
+    results = _pick(
+        r"\b(results?|found|finding|show(?:ed|s)?|increase|decrease|association)\b", 2
+    )
+    conclusion = _pick(r"\b(conclusion|conclude|suggest|indicate|implication)\b", 3)
+
+    if not objective:
+        objective = "The study set out to answer an important clinical question."
+    if not results:
+        results = "The key findings provide new evidence relevant to clinical decision making."
+    if not conclusion:
+        conclusion = "The authors conclude the findings are meaningful, with caveats about interpretation."
+
+    take_home = (
+        "The take-home message is to apply these findings in context,"
+        " balancing potential benefit with study limitations."
+    )
+
     return {
         "dialog": [
             {
                 "speaker": "host",
-                "text": "Welcome. Here is a quick discussion of this paper.",
+                "text": "Welcome. Let's break down this paper and what it means in practice.",
             },
-            {"speaker": "guest", "text": summary},
+            {
+                "speaker": "host",
+                "text": "What was the main objective of this study?",
+            },
+            {"speaker": "guest", "text": objective},
+            {
+                "speaker": "host",
+                "text": "What did the results actually show?",
+            },
+            {"speaker": "guest", "text": results},
+            {
+                "speaker": "host",
+                "text": "How should we interpret those findings, and what did the authors conclude?",
+            },
+            {"speaker": "guest", "text": conclusion},
+            {
+                "speaker": "host",
+                "text": "So what is the take-home message for clinicians and readers?",
+            },
+            {"speaker": "guest", "text": "".join(take_home)},
         ]
     }
+
+
+def _podcast_has_required_beats(dialog: list[dict]) -> bool:
+    """Validate podcast dialog has discussion beats and both speakers."""
+    if not dialog or len(dialog) < 6:
+        return False
+
+    speakers = {str((turn or {}).get("speaker", "")).strip().lower() for turn in dialog}
+    if not {"host", "guest"}.issubset(speakers):
+        return False
+
+    text_blob = " ".join(str((turn or {}).get("text", "")) for turn in dialog).lower()
+
+    has_objective = any(
+        w in text_blob for w in ("objective", "aim", "purpose", "research question")
+    )
+    has_results = any(w in text_blob for w in ("result", "results", "found", "finding"))
+    has_conclusion = any(
+        w in text_blob for w in ("conclusion", "conclude", "interpret")
+    )
+    has_take_home = any(
+        w in text_blob for w in ("take-home", "take home", "bottom line")
+    )
+
+    return has_objective and has_results and has_conclusion and has_take_home
+
+
+def _coerce_podcast_dialog(dialog: list[dict], parsed_text: str, filename: str) -> dict:
+    """Return dialog when quality is acceptable; otherwise provide structured fallback."""
+    cleaned: list[dict] = []
+    for turn in dialog or []:
+        speaker = str((turn or {}).get("speaker", "")).strip().lower()
+        text = str((turn or {}).get("text", "")).strip()
+        if not text:
+            continue
+        if speaker not in ("host", "guest"):
+            speaker = "host" if len(cleaned) % 2 == 0 else "guest"
+        cleaned.append({"speaker": speaker, "text": text})
+
+    if _podcast_has_required_beats(cleaned):
+        return {"dialog": cleaned}
+
+    return _fallback_podcast_dialog(parsed_text, filename)
 
 
 async def _build_content_for_mode(filename: str, parsed_text: str, mode: str) -> Any:
@@ -402,6 +493,9 @@ async def _build_content_for_mode(filename: str, parsed_text: str, mode: str) ->
             and isinstance(result.get("dialog"), list)
             and any((turn or {}).get("text", "").strip() for turn in result["dialog"])
         ):
+            result = _coerce_podcast_dialog(
+                result.get("dialog", []), parsed_text, filename
+            )
             content_cache[cache_key] = {
                 "content": result,
                 "expires": datetime.now() + timedelta(hours=1),
