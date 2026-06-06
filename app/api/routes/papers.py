@@ -10,7 +10,7 @@ import os
 import re
 import traceback
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 # In-memory storage with expiration
 topics = {}  # {topic_id: {name, filenames, audio_bytes, created_at, expires_at}}
 audio_cache = {}  # {filename: {audio_bytes, expires_at}}
+content_cache = {}  # {"filename:mode": {"content": str|dict, "expires": datetime}}
 
 # Scheduler for cleanup
 scheduler = AsyncIOScheduler()
@@ -292,6 +293,22 @@ def _timed(stage: str, started_at: float) -> None:
     logger.info("timing stage=%s elapsed_ms=%.1f", stage, elapsed_ms)
 
 
+def _invalidate_file_caches(filename: str) -> None:
+    """Invalidate cached audio/content entries for a specific filename."""
+    if not filename:
+        return
+
+    keys_to_remove = [k for k in audio_cache.keys() if k.startswith(f"{filename}:")]
+    for key in keys_to_remove:
+        audio_cache.pop(key, None)
+
+    content_keys_to_remove = [
+        k for k in content_cache.keys() if k.startswith(f"{filename}:")
+    ]
+    for key in content_keys_to_remove:
+        content_cache.pop(key, None)
+
+
 def _normalize_mode(mode: Optional[str]) -> str:
     """Normalize external mode names to internal generation modes."""
     incoming = (mode or "read").lower()
@@ -343,11 +360,22 @@ def _fallback_podcast_dialog(parsed_text: str, filename: str) -> dict:
     }
 
 
-async def _build_content_for_mode(filename: str, parsed_text: str, mode: str):
+async def _build_content_for_mode(filename: str, parsed_text: str, mode: str) -> Any:
     """Return script text or dialog object using one shared content pipeline."""
     normalized = _normalize_mode(mode)
+    cache_key = f"{filename}:{normalized}"
+
+    cached = content_cache.get(cache_key)
+    if cached and cached.get("expires") and cached["expires"] > datetime.now():
+        return cached.get("content")
+
     if normalized == "read":
-        return _build_read_mode_script(parsed_text, filename)
+        result = _build_read_mode_script(parsed_text, filename)
+        content_cache[cache_key] = {
+            "content": result,
+            "expires": datetime.now() + timedelta(hours=1),
+        }
+        return result
 
     metadata = _load_metadata_sidecar(filename)
     result = await llm_service.generate_text_to_speech_script(
@@ -356,8 +384,17 @@ async def _build_content_for_mode(filename: str, parsed_text: str, mode: str):
 
     if normalized == "spoken_summary":
         if isinstance(result, str) and result.strip():
+            content_cache[cache_key] = {
+                "content": result,
+                "expires": datetime.now() + timedelta(hours=1),
+            }
             return result
-        return _fallback_spoken_summary(parsed_text, filename)
+        fallback = _fallback_spoken_summary(parsed_text, filename)
+        content_cache[cache_key] = {
+            "content": fallback,
+            "expires": datetime.now() + timedelta(minutes=20),
+        }
+        return fallback
 
     if normalized == "podcast":
         if (
@@ -365,9 +402,22 @@ async def _build_content_for_mode(filename: str, parsed_text: str, mode: str):
             and isinstance(result.get("dialog"), list)
             and any((turn or {}).get("text", "").strip() for turn in result["dialog"])
         ):
+            content_cache[cache_key] = {
+                "content": result,
+                "expires": datetime.now() + timedelta(hours=1),
+            }
             return result
-        return _fallback_podcast_dialog(parsed_text, filename)
+        fallback = _fallback_podcast_dialog(parsed_text, filename)
+        content_cache[cache_key] = {
+            "content": fallback,
+            "expires": datetime.now() + timedelta(minutes=20),
+        }
+        return fallback
 
+    content_cache[cache_key] = {
+        "content": result,
+        "expires": datetime.now() + timedelta(hours=1),
+    }
     return result
 
 
@@ -427,6 +477,16 @@ def cleanup_expired_data():
         print(f"Cleaning up expired audio: {filename}")
         del audio_cache[filename]
 
+    # Clean up expired generated content cache
+    expired_content = [
+        key
+        for key, data in content_cache.items()
+        if data.get("expires") and data["expires"] < now
+    ]
+    for key in expired_content:
+        print(f"Cleaning up expired content cache: {key}")
+        del content_cache[key]
+
     # Clean up old PDF files
     for file_path in UPLOAD_DIR.glob("*.pdf"):
         # Delete files older than 24 hours
@@ -471,6 +531,7 @@ async def upload_paper(file: UploadFile = File(...)):
         file_path = UPLOAD_DIR / file.filename
         content = await file.read()
         file_path.write_bytes(content)
+        _invalidate_file_caches(file.filename)
 
         upload_started = perf_counter()
 
@@ -1118,6 +1179,7 @@ async def import_by_pmid(payload: dict, request: Request):
                         detail="No free full-text PDF found for this DOI",
                     )
 
+            _invalidate_file_caches(filename)
             return {"status": "imported", "filename": filename}
     except HTTPException:
         raise
