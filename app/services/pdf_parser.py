@@ -1,5 +1,6 @@
 from pypdf import PdfReader
 from pathlib import Path
+import re
 
 
 class PDFParser:
@@ -53,9 +54,16 @@ class PDFParser:
         except Exception:
             title = author = subject = None
 
+        authors = []
+        if isinstance(author, str) and author.strip():
+            # Common PDF author separators include semicolons, commas, pipes, and newlines.
+            split = re.split(r"\s*(?:;|\||\n)\s*", author)
+            authors = [a.strip() for a in split if a and a.strip()]
+
         return {
             "pages": pages,
             "title": title or None,
             "author": author or None,
+            "authors": authors,
             "subject": subject or None,
         }

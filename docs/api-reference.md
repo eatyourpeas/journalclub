@@ -27,7 +27,7 @@ file: <PDF file>
 
 ### Get Paper Info
 ```http
-GET /api/papers/{filename}
+GET /api/papers/files/{filename}
 ```
 
 ### Summarize Paper

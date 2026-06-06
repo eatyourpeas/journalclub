@@ -150,7 +150,37 @@ async function uploadFile(file) {
 async function handleRead(mode = "full") {
   const area = document.getElementById("resultArea");
   area.classList.remove("hidden");
-  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="previewArea"><p class="text-sm">Generating script preview...</p></div></div>`;
+  area.innerHTML = `<div class="mockup-window border border-base-300 bg-base-200 mt-4"><div class="p-6 bg-base-100 min-h-[100px]" id="previewArea"><div class="flex flex-col gap-4"><p class="text-sm font-semibold" id="readStatusMsg">Generating script preview...</p><progress class="progress progress-secondary w-full" value="8" max="100" id="readMainBar"></progress></div></div></div>`;
+
+  const startTime = Date.now();
+  function elapsedSec() {
+    return Math.round((Date.now() - startTime) / 1000);
+  }
+
+  let ticker = null;
+  function startTicker() {
+    if (ticker) clearInterval(ticker);
+    let barValue = 8;
+    ticker = setInterval(() => {
+      const status = document.getElementById("readStatusMsg");
+      const bar = document.getElementById("readMainBar");
+      if (status)
+        status.textContent = `Generating script preview... (${elapsedSec()}s)`;
+      if (bar) {
+        barValue = Math.min(92, barValue + 3);
+        bar.value = barValue;
+      }
+    }, 1000);
+  }
+  function stopTicker() {
+    if (ticker) {
+      clearInterval(ticker);
+      ticker = null;
+    }
+  }
+
+  startTicker();
+
   try {
     const resp = await fetch(`${API_BASE}/tts-script`, {
       method: "POST",
@@ -167,9 +197,35 @@ async function handleRead(mode = "full") {
     });
     if (!resp.ok) throw new Error(`Script failed: ${resp.status}`);
     const data = await resp.json();
+    stopTicker();
     const preview = document.getElementById("previewArea");
-    preview.innerHTML = `<pre class="whitespace-pre-wrap">${data.script || data.dialog || JSON.stringify(data, null, 2)}</pre>`;
+
+    const escapeHtml = (value) =>
+      String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    let previewText = "";
+    if (typeof data.script === "string" && data.script.trim()) {
+      previewText = data.script;
+    } else if (Array.isArray(data.dialog) && data.dialog.length > 0) {
+      previewText = data.dialog
+        .map((turn) => {
+          const speaker = (turn && turn.speaker) || "speaker";
+          const text = (turn && turn.text) || "";
+          return `${speaker.toUpperCase()}: ${text}`;
+        })
+        .join("\n\n");
+    } else {
+      previewText = JSON.stringify(data, null, 2);
+    }
+
+    preview.innerHTML = `<div class="flex flex-col gap-3"><div class="flex items-center gap-3"><p class="text-sm font-semibold">Preview ready in ${elapsedSec()}s</p><progress class="progress progress-success w-40" value="100" max="100"></progress></div><pre class="whitespace-pre-wrap">${escapeHtml(previewText)}</pre></div>`;
   } catch (err) {
+    stopTicker();
     console.error("Preview error", err);
     const preview = document.getElementById("previewArea");
     preview.innerHTML = `<div class="alert alert-error"><span>Error: ${err.message}</span></div>`;
