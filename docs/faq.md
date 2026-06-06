@@ -25,10 +25,17 @@ A: Yes! Upload up to 5 papers, then create a topic to combine them.
 ## Audio & Summarization
 
 **Q: How long does it take to generate audio?**  
-A: Typically 15–40 seconds for a standard paper. The AI needs to:
+A: It depends on paper length and mode. With streaming enabled, playback starts as soon as the first chunks are ready, while full generation may continue in the background. Typical ranges:
 
-1. Generate an optimized script (15–30s)
-2. Convert to audio via edge-tts (~5–15s)
+- Summary: usually faster than full read
+- Full read: can take longer for long PDFs
+- Podcast: typically the slowest because it generates dialog turns before synthesis
+
+The pipeline is:
+
+1. Parse PDF text
+2. Generate script (LLM)
+3. Convert script to audio (TTS)
 
 **Q: Can I download the audio?**  
 A: Yes! Right-click the audio player and select "Download" or use the RSS feed to sync to your podcast app.

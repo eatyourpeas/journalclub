@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from time import perf_counter
 from app.models.schemas import TopicRequest, TopicResponse
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Request
 import uuid
@@ -90,7 +91,9 @@ async def get_paper_text(filename: str) -> str:
 def _strip_front_matter(text: str, remove_abstract: bool = True) -> str:
     """Simpler front-matter stripper:
 
-    - If an "Abstract" heading exists, keep starting from that heading (i.e. drop everything above it).
+        - If an "Abstract" heading exists:
+            - remove_abstract=True: skip the abstract block and start from the next section.
+            - remove_abstract=False: keep starting from Abstract.
     - Otherwise, try to find an "Introduction" or numbered section and start there.
     - Trim off any trailing "References"/"Bibliography" block.
     This is intentionally conservative and deterministic compared to asking the LLM to ignore text.
@@ -98,12 +101,39 @@ def _strip_front_matter(text: str, remove_abstract: bool = True) -> str:
     t = text or ""
 
     try:
-        # Prefer an explicit Abstract heading (keep the heading and the abstract/body that follows)
+        # Prefer an explicit Abstract heading.
         m_abs = re.search(r"(?im)^\s*abstract\b", t)
         if m_abs:
-            start_idx = m_abs.start()
-            new_t = t[start_idx:]
-            logger.debug("_strip_front_matter: starting from Abstract at %d", start_idx)
+            if remove_abstract:
+                # Skip abstract and begin at the next major section heading.
+                tail = t[m_abs.end() :]
+                m_next = re.search(
+                    (
+                        r"(?im)^\s*(?:"
+                        r"introduction\b|background\b|methods?\b|materials\s+and\s+methods\b|"
+                        r"results?\b|discussion\b|conclusions?\b|\d+\.)"
+                    ),
+                    tail,
+                )
+                if m_next:
+                    start_idx = m_abs.end() + m_next.start()
+                    new_t = t[start_idx:]
+                    logger.debug(
+                        "_strip_front_matter: skipping Abstract, starting from section at %d",
+                        start_idx,
+                    )
+                else:
+                    # No clear next heading; drop just the Abstract heading/body prefix.
+                    new_t = tail
+                    logger.debug(
+                        "_strip_front_matter: skipped Abstract heading, no next section heading found"
+                    )
+            else:
+                start_idx = m_abs.start()
+                new_t = t[start_idx:]
+                logger.debug(
+                    "_strip_front_matter: starting from Abstract at %d", start_idx
+                )
         else:
             # Fallback: look for Introduction or a numbered top-level section
             m_intro = re.search(r"(?im)^\s*(?:introduction\b|background\b|\d+\.)", t)
@@ -153,15 +183,102 @@ def _build_intro_from_meta(filename: str) -> str:
             title = meta.get("title")
             authors = meta.get("authors") or []
             lead = authors[0] if isinstance(authors, list) and authors else None
-            if title and lead:
-                return f"{title}. The lead author is {lead}.\n\n"
+            journal = meta.get("journal")
+            month = meta.get("month")
+            year = meta.get("year")
+
+            intro_parts = []
             if title:
-                return f"{title}.\n\n"
+                intro_parts.append(str(title).strip())
+
+            details = []
             if lead:
-                return f"The lead author is {lead}.\n\n"
+                details.append(f"First author: {lead}")
+            if journal:
+                details.append(f"Journal: {journal}")
+
+            if month and year:
+                details.append(f"Published: {month} {year}")
+            elif year:
+                details.append(f"Published: {year}")
+
+            if details:
+                intro_parts.append(". ".join(details))
+
+            if intro_parts:
+                return ". ".join(intro_parts).strip() + ".\n\n"
     except Exception:
         pass
     return ""
+
+
+def _normalize_pdf_linebreaks_for_tts(text: str) -> str:
+    """Repair PDF line-break artifacts for smoother spoken output."""
+    t = text or ""
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
+    # Join hyphenated line breaks: "inter-\nvention" -> "intervention"
+    t = re.sub(r"(?<=\w)-\s*\n\s*(?=\w)", "", t)
+    # Convert single line breaks inside paragraphs into spaces.
+    t = re.sub(r"(?<!\n)\n(?!\n)", " ", t)
+    # Normalize extra horizontal whitespace while preserving paragraphs.
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
+def _build_read_mode_script(parsed_text: str, filename: str) -> str:
+    """Build deterministic full-read script from body text + concise metadata intro."""
+    main_body = _strip_front_matter(parsed_text, remove_abstract=True)
+    main_body = _normalize_pdf_linebreaks_for_tts(main_body)
+    intro = _build_intro_from_meta(filename)
+    script_text = intro + main_body
+    script_text = re.sub(r"\[[^\]]+\]", "", script_text)
+    script_text = re.sub(
+        r"\s*\([^)]*et al[^)]*\)", "", script_text, flags=re.IGNORECASE
+    )
+    script_text = re.sub(r"\n{2,}", "\n\n", script_text)
+    return script_text.strip()
+
+
+def _timed(stage: str, started_at: float) -> None:
+    """Log stage duration in milliseconds."""
+    elapsed_ms = (perf_counter() - started_at) * 1000
+    logger.info("timing stage=%s elapsed_ms=%.1f", stage, elapsed_ms)
+
+
+def _normalize_mode(mode: Optional[str]) -> str:
+    """Normalize external mode names to internal generation modes."""
+    incoming = (mode or "read").lower()
+    if incoming in ("summarise", "summary", "spoken_summary"):
+        return "spoken_summary"
+    if incoming in ("podcast",):
+        return "podcast"
+    if incoming in ("read", "read_aloud", "read_aloud_full", "full"):
+        return "read"
+    return "read"
+
+
+def _load_metadata_sidecar(filename: str) -> dict:
+    """Load persisted metadata sidecar when present."""
+    try:
+        meta_path = UPLOAD_DIR / f"{filename}.meta.json"
+        if meta_path.exists():
+            return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+async def _build_content_for_mode(filename: str, parsed_text: str, mode: str) -> str:
+    """Return script text or dialog object using one shared content pipeline."""
+    normalized = _normalize_mode(mode)
+    if normalized == "read":
+        return _build_read_mode_script(parsed_text, filename)
+
+    metadata = _load_metadata_sidecar(filename)
+    return await llm_service.generate_text_to_speech_script(
+        parsed_text, mode=normalized, metadata=metadata
+    )
 
 
 # Background task processor
@@ -265,12 +382,16 @@ async def upload_paper(file: UploadFile = File(...)):
         content = await file.read()
         file_path.write_bytes(content)
 
+        upload_started = perf_counter()
+
         # Parse PDF text and metadata
         # container for CrossRef-derived metadata
         crossref_meta = {}
 
         try:
+            parse_started = perf_counter()
             parsed_text = pdf_parser.extract_text(str(file_path))
+            _timed("upload.parse_pdf", parse_started)
         except Exception:
             parsed_text = ""
 
@@ -357,7 +478,9 @@ async def upload_paper(file: UploadFile = File(...)):
             )
 
         try:
+            meta_started = perf_counter()
             metadata = pdf_parser.extract_metadata(str(file_path)) or {}
+            _timed("upload.extract_metadata", meta_started)
         except Exception:
             metadata = {}
 
@@ -384,7 +507,8 @@ async def upload_paper(file: UploadFile = File(...)):
         meta = {
             "filename": file.filename,
             "title": metadata.get("title") or None,
-            "authors": metadata.get("authors") or [],
+            "authors": metadata.get("authors")
+            or ([metadata.get("author")] if metadata.get("author") else []),
             "pages": metadata.get("pages", 0),
             "word_count": len(parsed_text.split()) if parsed_text else 0,
             "uploaded_at": datetime.now().isoformat(),
@@ -394,7 +518,9 @@ async def upload_paper(file: UploadFile = File(...)):
         # If title missing, try LLM to generate one
         if not meta.get("title"):
             try:
+                title_started = perf_counter()
                 gen_title = await llm_service.generate_title(parsed_text)
+                _timed("upload.generate_title", title_started)
                 if gen_title:
                     meta["title"] = gen_title
                     meta["generated_title"] = True
@@ -457,6 +583,34 @@ async def upload_paper(file: UploadFile = File(...)):
                                             if pubdate is not None
                                             else None
                                         )
+                                        month = (
+                                            pubdate.findtext("Month")
+                                            if pubdate is not None
+                                            else None
+                                        )
+                                        if pubdate is not None and not (year and month):
+                                            medline_date = pubdate.findtext(
+                                                "MedlineDate"
+                                            )
+                                            if medline_date:
+                                                m_year = re.search(
+                                                    r"\b(19|20)\d{2}\b", medline_date
+                                                )
+                                                if m_year and not year:
+                                                    year = m_year.group(0)
+                                                m_month = re.search(
+                                                    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b",
+                                                    medline_date,
+                                                    re.IGNORECASE,
+                                                )
+                                                if m_month and not month:
+                                                    month = m_month.group(0)
+
+                                        if year and not meta.get("year"):
+                                            meta["year"] = year
+                                        if month and not meta.get("month"):
+                                            meta["month"] = month
+
                                         vol = art.findtext(".//JournalIssue/Volume")
                                         pages = art.findtext(".//Pagination/MedlinePgn")
                                         citation = []
@@ -530,6 +684,8 @@ async def upload_paper(file: UploadFile = File(...)):
             meta_path.write_text(json.dumps(meta), encoding="utf-8")
         except Exception:
             pass
+
+        _timed("upload.total", upload_started)
 
         return PaperResponse(
             filename=file.filename,
@@ -935,154 +1091,7 @@ async def generate_tts_script(payload: dict):
 
     try:
         parsed_text = pdf_parser.extract_text(str(file_path))
-
-        # If requesting a spoken summary, derive a structured summary first
-        if (mode or "read_aloud_full") == "spoken_summary":
-            # Load metadata sidecar if available and pass to LLM
-            meta = {}
-            try:
-                meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                if meta_path.exists():
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                meta = {}
-
-            try:
-                summary_result = await llm_service.summarise_paper(
-                    parsed_text, metadata=meta
-                )
-                summary_data = (
-                    summary_result.get("summary")
-                    if isinstance(summary_result, dict)
-                    else None
-                )
-                if isinstance(summary_data, dict):
-                    parts = []
-                    s = summary_data.get("summary") or ""
-                    if s:
-                        parts.append(f"Summary:\n{s}")
-                    k = summary_data.get("key_points") or []
-                    if k:
-                        parts.append("Key points:\n" + "\n".join([f"- {p}" for p in k]))
-                    m = summary_data.get("methodology") or []
-                    if m:
-                        parts.append(
-                            "Methodology:\n" + "\n".join([f"- {p}" for p in m])
-                        )
-                    c = summary_data.get("conclusions") or []
-                    if c:
-                        parts.append(
-                            "Conclusions:\n" + "\n".join([f"- {p}" for p in c])
-                        )
-
-                    feed_text = "\n\n".join(parts)
-                else:
-                    feed_text = parsed_text
-            except Exception:
-                feed_text = parsed_text
-
-            result = await llm_service.generate_text_to_speech_script(
-                feed_text, mode="spoken_summary", metadata=meta
-            )
-        else:
-            if (mode or "").lower() in ("read", "read_aloud", "read_aloud_full"):
-                # Create deterministic script for read mode: strip front-matter and return plain text
-                try:
-
-                    def _strip_front_matter_local(txt: str) -> str:
-                        t = txt or ""
-                        m = re.search(
-                            r"(?im)^(?:\s*\d+\.|\s*introduction\b|\s*background\b|\s*methods\b)",
-                            t,
-                        )
-                        if m:
-                            return t[m.start() :]
-                        m2 = re.search(
-                            r"(?ims)^\s*abstract\b[:\s\-]*\n(.*?)(?=\n\s*(?:introduction\b|\d+\.|background\b|methods\b)|\Z)",
-                            t,
-                        )
-                        if m2:
-                            return t[m2.end() :]
-                        m3 = re.search(
-                            r"(?m)^(?:[^\n]+\s-\s[^\n]+\s*(?:\n|\r|$)){3,}", t
-                        )
-                        if m3:
-                            return t[m3.end() :]
-                        paragraphs = re.split(r"\n\s*\n", t)
-                        for p in paragraphs:
-                            word_count = len(p.split())
-                            if word_count > 40:
-                                is_author_block = False
-                                if p.count(",") > 3:
-                                    is_author_block = True
-                                if re.search(
-                                    r"(?i)\b(university|center|hospital|institute|department|school|laboratory|clinic|centre)\b",
-                                    p,
-                                ):
-                                    is_author_block = True
-                                if (
-                                    re.search(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", p)
-                                    and p.count(",") > 1
-                                ):
-                                    is_author_block = True
-                                if not is_author_block:
-                                    return t[t.find(p) :]
-                        return t
-
-                    main_body = _strip_front_matter_local(parsed_text)
-                    intro = ""
-                    try:
-                        meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                        if meta_path.exists():
-                            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                            title = meta.get("title")
-                            authors = meta.get("authors") or []
-                            lead = (
-                                authors[0]
-                                if isinstance(authors, list) and authors
-                                else None
-                            )
-                            if title and lead:
-                                intro = f"{title}. The lead author is {lead}.\n\n"
-                            elif title:
-                                intro = f"{title}.\n\n"
-                            elif lead:
-                                intro = f"The lead author is {lead}.\n\n"
-                    except Exception:
-                        intro = ""
-
-                    script_text = intro + main_body
-                    script_text = re.sub(r"\[[^\]]+\]", "", script_text)
-                    script_text = re.sub(
-                        r"\s*\([^)]*et al[^)]*\)", "", script_text, flags=re.IGNORECASE
-                    )
-                    script_text = re.sub(r"\n{2,}", "\n\n", script_text)
-                    result = script_text.strip()
-                except Exception:
-                    # pass metadata where possible
-                    meta = {}
-                    try:
-                        meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                        if meta_path.exists():
-                            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                    except Exception:
-                        meta = {}
-
-                    result = await llm_service.generate_text_to_speech_script(
-                        parsed_text, mode=(mode or "read_aloud_full"), metadata=meta
-                    )
-            else:
-                meta = {}
-                try:
-                    meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                    if meta_path.exists():
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
-                    meta = {}
-
-                result = await llm_service.generate_text_to_speech_script(
-                    parsed_text, mode=(mode or "read_aloud_full"), metadata=meta
-                )
+        result = await _build_content_for_mode(filename, parsed_text, mode or "read")
 
         # If podcast mode returns structured dialog, pass it through
         if isinstance(result, dict) and "dialog" in result:
@@ -1105,6 +1114,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
     """
 
     try:
+        total_started = perf_counter()
         # For cached audio only consider full/summary audio cache — return cached audio
         # only when the client explicitly requested audio (audio=True). This prevents
         # returning WAV bytes when the client expects JSON dialog.
@@ -1112,6 +1122,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
         if audio and cache_key in audio_cache:
             cache_entry = audio_cache[cache_key]
             if cache_entry["expires"] > datetime.now():
+                _timed("read_aloud.cache_hit", total_started)
                 audio_stream = io.BytesIO(cache_entry["audio"])
                 return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
 
@@ -1119,137 +1130,41 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Paper not found")
 
+        parse_started = perf_counter()
         parsed_text = pdf_parser.extract_text(str(file_path))
+        _timed("read_aloud.parse_pdf", parse_started)
 
-        # Normalize incoming mode to one of: 'summarise', 'podcast', 'read'
-        # Supported external modes: 'summarise' -> spoken summary, 'podcast' -> podcast dialog,
-        # 'read' -> read title, lead author, and main text (exclude abstract)
-        incoming = (mode or "read").lower()
-        if incoming in ("summarise", "summary", "spoken_summary"):
-            llm_mode = "spoken_summary"
-            external_mode = "summarise"
-        elif incoming in ("podcast",):
-            llm_mode = "podcast"
-            external_mode = "podcast"
-        else:
-            llm_mode = "read_aloud_full"
-            external_mode = "read"
-
-        # For spoken summary, first produce a structured summary then feed it to the spoken_summary prompt
-        if llm_mode == "spoken_summary":
-            try:
-                # Load metadata sidecar if available and pass to LLM
-                meta = {}
-                try:
-                    meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                    if meta_path.exists():
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
-                    meta = {}
-
-                summary_result = await llm_service.summarise_paper(
-                    parsed_text, metadata=meta
-                )
-                summary_data = (
-                    summary_result.get("summary")
-                    if isinstance(summary_result, dict)
-                    else None
-                )
-                if isinstance(summary_data, dict):
-                    parts = []
-                    s = summary_data.get("summary") or ""
-                    if s:
-                        parts.append(f"Summary:\n{s}")
-                    k = summary_data.get("key_points") or []
-                    if k:
-                        parts.append("Key points:\n" + "\n".join([f"- {p}" for p in k]))
-                    m = summary_data.get("methodology") or []
-                    if m:
-                        parts.append(
-                            "Methodology:\n" + "\n".join([f"- {p}" for p in m])
-                        )
-                    c = summary_data.get("conclusions") or []
-                    if c:
-                        parts.append(
-                            "Conclusions:\n" + "\n".join([f"- {p}" for p in c])
-                        )
-
-                    feed_text = "\n\n".join(parts)
-                else:
-                    feed_text = parsed_text
-            except Exception:
-                feed_text = parsed_text
-
-            result = await llm_service.generate_text_to_speech_script(
-                feed_text, mode=llm_mode
+        normalized_mode = _normalize_mode(mode)
+        if normalized_mode in ("spoken_summary", "podcast"):
+            llm_started = perf_counter()
+            result = await _build_content_for_mode(
+                filename, parsed_text, mode or "read"
             )
-        else:
-            # If external 'read' mode, strip front-matter (title, authors, affiliations, abstract)
-            if external_mode == "read":
-                try:
-                    # Use the top-level `_strip_front_matter` implementation (keeps Abstract+body, trims References)
-                    main_body = _strip_front_matter(parsed_text)
-
-                    # Prepend a concise intro using sidecar metadata if available
-                    intro = ""
-                    try:
-                        meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                        if meta_path.exists():
-                            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                            title = meta.get("title")
-                            authors = meta.get("authors") or []
-                            lead = (
-                                authors[0]
-                                if isinstance(authors, list) and authors
-                                else None
-                            )
-                            if title and lead:
-                                intro = f"{title}. The lead author is {lead}.\n\n"
-                            elif title:
-                                intro = f"{title}.\n\n"
-                            elif lead:
-                                intro = f"The lead author is {lead}.\n\n"
-                    except Exception:
-                        intro = ""
-
-                    parsed_text = intro + main_body
-                except Exception:
-                    # On any failure, fall back to the original parsed_text
-                    parsed_text = parsed_text
-
-            if external_mode == "read":
-                # Deterministic 'read' mode: avoid calling LLM; produce a simple script
-                # Remove bracketed citations and common '(Smith et al., 2020)'-style parentheticals
-                try:
-                    script_text = re.sub(r"\[[^\]]+\]", "", parsed_text)
-                    script_text = re.sub(
-                        r"\s*\([^)]*et al[^)]*\)", "", script_text, flags=re.IGNORECASE
-                    )
-                    # Collapse multiple blank lines
-                    script_text = re.sub(r"\n{2,}", "\n\n", script_text)
-                    result = script_text.strip()
-                except Exception:
-                    result = parsed_text
+            if normalized_mode == "spoken_summary":
+                _timed("read_aloud.llm_spoken_summary", llm_started)
             else:
-                result = await llm_service.generate_text_to_speech_script(
-                    parsed_text, mode=llm_mode
-                )
+                _timed("read_aloud.llm_script", llm_started)
+        else:
+            result = _build_read_mode_script(parsed_text, filename)
 
         # Podcast mode returns structured dialog by default; return audio only if `audio=True`
-        if mode == "podcast":
+        if normalized_mode == "podcast":
             # If already a parsed dict with dialog, render two-voice audio
             if isinstance(result, dict) and "dialog" in result:
                 if audio:
                     try:
+                        tts_started = perf_counter()
                         audio_bytes = await synthesize_dialog_audio(
                             result.get("dialog", []),
                             male_speaker=PODCAST_VOICE_MALE,
                             female_speaker=PODCAST_VOICE_FEMALE,
                         )
+                        _timed("read_aloud.tts_podcast", tts_started)
                         audio_cache[cache_key] = {
                             "audio": audio_bytes,
                             "expires": datetime.now() + timedelta(hours=1),
                         }
+                        _timed("read_aloud.total", total_started)
                         stream = io.BytesIO(audio_bytes)
                         stream.seek(0)
                         return StreamingResponse(stream, media_type=TTS_AUDIO_MIME)
@@ -1272,15 +1187,18 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
                     if isinstance(parsed, dict) and "dialog" in parsed:
                         if audio:
                             try:
+                                tts_started = perf_counter()
                                 audio_bytes = await synthesize_dialog_audio(
                                     parsed.get("dialog", []),
                                     male_speaker=PODCAST_VOICE_MALE,
                                     female_speaker=PODCAST_VOICE_FEMALE,
                                 )
+                                _timed("read_aloud.tts_podcast", tts_started)
                                 audio_cache[cache_key] = {
                                     "audio": audio_bytes,
                                     "expires": datetime.now() + timedelta(hours=1),
                                 }
+                                _timed("read_aloud.total", total_started)
                                 stream = io.BytesIO(audio_bytes)
                                 stream.seek(0)
                                 return StreamingResponse(
@@ -1330,9 +1248,11 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
             raise HTTPException(status_code=500, detail="TTS script generation failed")
 
         # Synthesize using Coqui sidecar (male podcast voice for full read and summary)
+        tts_started = perf_counter()
         audio_bytes = await synthesize_concatenated(
             text=result, voice="coqui-tts:en_vctk", speaker=PODCAST_VOICE_MALE
         )
+        _timed("read_aloud.tts_script", tts_started)
 
         # Cache for 1 hour
         audio_cache[cache_key] = {
@@ -1342,6 +1262,7 @@ async def read_aloud(filename: str, mode: Optional[str] = "full", audio: bool = 
 
         audio_stream = io.BytesIO(audio_bytes)
         audio_stream.seek(0)
+        _timed("read_aloud.total", total_started)
         return StreamingResponse(audio_stream, media_type=TTS_AUDIO_MIME)
     except Exception as e:
         traceback.print_exc()
@@ -1466,6 +1387,7 @@ async def read_aloud_stream(payload: dict):
     Server yields lines of JSON: {"idx": <n>, "audio_b64": "..."}\n
     """
     try:
+        total_started = perf_counter()
         filename = payload.get("filename")
         mode = payload.get("mode", "full")
         if not filename:
@@ -1475,43 +1397,34 @@ async def read_aloud_stream(payload: dict):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Paper not found")
 
+        parse_started = perf_counter()
         parsed_text = pdf_parser.extract_text(str(file_path))
+        _timed("read_aloud_stream.parse_pdf", parse_started)
 
-        incoming = (mode or "read").lower()
-        if incoming in ("summarise", "summary", "spoken_summary"):
-            meta = {}
-            try:
-                meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                if meta_path.exists():
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                meta = {}
+        normalized_mode = _normalize_mode(mode)
+        if normalized_mode == "spoken_summary":
 
             async def gen():
                 # LLM runs inside generator so HTTP response starts immediately;
                 # keepalive newlines prevent proxy idle-timeout while LLM is working.
+                llm_started = perf_counter()
                 task = asyncio.create_task(
-                    llm_service.summarise_paper(parsed_text, metadata=meta)
+                    _build_content_for_mode(filename, parsed_text, mode or "read")
                 )
                 while not task.done():
                     yield b"\n"
                     await asyncio.sleep(3)
                 try:
-                    summary_result = await task
-                    feed_text = (
-                        summary_result.get("summary")
-                        if isinstance(summary_result, dict)
-                        else None
-                    )
-                    if isinstance(feed_text, dict):
-                        feed_text = feed_text.get("summary") or parsed_text
-                    if not feed_text:
+                    feed_text = await task
+                    _timed("read_aloud_stream.llm_spoken_summary", llm_started)
+                    if not isinstance(feed_text, str) or not feed_text.strip():
                         feed_text = parsed_text
                 except Exception as e:
                     logger.exception("Summary LLM failed in stream: %s", str(e))
                     yield (json.dumps({"error": str(e)}) + "\n").encode("utf-8")
                     return
 
+                tts_started = perf_counter()
                 async for idx, b in synthesize_chunks_stream(
                     feed_text, voice="coqui-tts:en_vctk", speaker=PODCAST_VOICE_MALE
                 ):
@@ -1526,25 +1439,18 @@ async def read_aloud_stream(payload: dict):
                         )
                         + "\n"
                     ).encode("utf-8")
+                _timed("read_aloud_stream.tts_summary", tts_started)
+                _timed("read_aloud_stream.total", total_started)
 
             return StreamingResponse(gen(), media_type="application/x-ndjson")
 
-        elif incoming == "podcast":
-            meta = {}
-            try:
-                meta_path = UPLOAD_DIR / f"{filename}.meta.json"
-                if meta_path.exists():
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                meta = {}
+        elif normalized_mode == "podcast":
 
             async def gen_dialog():
                 # LLM runs inside generator so HTTP response starts immediately;
                 # keepalive newlines prevent proxy idle-timeout while LLM is working.
                 task = asyncio.create_task(
-                    llm_service.generate_text_to_speech_script(
-                        parsed_text, mode="podcast", metadata=meta
-                    )
+                    _build_content_for_mode(filename, parsed_text, mode or "podcast")
                 )
                 while not task.done():
                     yield b"\n"
@@ -1604,9 +1510,14 @@ async def read_aloud_stream(payload: dict):
 
         else:
             # full read: stream synthesized chunks
+            read_script = await _build_content_for_mode(
+                filename, parsed_text, mode or "read"
+            )
+
             async def gen_full():
+                tts_started = perf_counter()
                 async for idx, b in synthesize_chunks_stream(
-                    parsed_text, voice="coqui-tts:en_vctk", speaker=PODCAST_VOICE_MALE
+                    read_script, voice="coqui-tts:en_vctk", speaker=PODCAST_VOICE_MALE
                 ):
                     if not b:
                         continue
@@ -1619,6 +1530,8 @@ async def read_aloud_stream(payload: dict):
                         )
                         + "\n"
                     ).encode("utf-8")
+                    _timed("read_aloud_stream.tts_full", tts_started)
+                    _timed("read_aloud_stream.total", total_started)
 
             return StreamingResponse(gen_full(), media_type="application/x-ndjson")
 
